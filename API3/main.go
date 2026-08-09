@@ -124,7 +124,7 @@ func main() {
 	// Registrar las rutas con sus handlers
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/api3/"+carnet+"/call-api1", callAPI1Handler)
-	http.HandleFunc("/api3/"+carnet+"/call-ap2", callAPI2Handler)
+	http.HandleFunc("/api3/"+carnet+"/call-api2", callAPI2Handler)
 
 	//Mensaje en consola para saber que está ocurriendo
 	fmt.Printf("Servidor %s corriendo en http://localhost%s\n", apiName, port)
