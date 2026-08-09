@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -28,7 +29,8 @@ const (
 	carnet   = "202302232"
 	vmNumber = "3"
 	apiName  = "API3"
-	port     = ":8083"
+	host     = "0.0.0.0"
+	port     = "8080"
 )
 
 // Handler para /health
@@ -51,7 +53,12 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func callAPI1Handler(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get("http://localhost:8081/health")
+	api1URL := os.Getenv("API1_URL")
+	if api1URL == "" {
+		api1URL = "http://localhost:8081/health"
+	}
+
+	resp, err := http.Get(api1URL)
 
 	// Declaramos la variable connection (inicialmente false)
 	connection := false
@@ -88,7 +95,12 @@ func callAPI1Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func callAPI2Handler(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get("http://localhost:8082/health")
+	api2URL := os.Getenv("API2_URL")
+	if api2URL == "" {
+		api2URL = "http://localhost:8082/health"
+	}
+
+	resp, err := http.Get(api2URL)
 
 	connection := false
 
@@ -105,7 +117,7 @@ func callAPI2Handler(w http.ResponseWriter, r *http.Request) {
 
 	respuesta := CallResponse{
 		Apiname:    "API3",
-		Message:    "The API3 located on the VM1 is working",
+		Message:    "The API3 located on the VM3 is working",
 		Connection: connection,
 		Carnet:     carnet,
 	}
@@ -127,14 +139,15 @@ func main() {
 	http.HandleFunc("/api3/"+carnet+"/call-api2", callAPI2Handler)
 
 	//Mensaje en consola para saber que está ocurriendo
-	fmt.Printf("Servidor %s corriendo en http://localhost%s\n", apiName, port)
+	fullAddress := host + ":" + port
+	fmt.Printf("Servidor %s corriendo en %s\n", apiName, fullAddress)
 	fmt.Printf("Endpoints disponibles:\n")
 	fmt.Printf("   GET /health\n")
 	fmt.Printf("   GET /api3/%s/call-api1\n", carnet)
 	fmt.Printf("   GET /api3/%s/call-api2\n", carnet)
 
 	// Iniciar el servidor
-	err := http.ListenAndServe(port, nil)
+	err := http.ListenAndServe(fullAddress, nil)
 	if err != nil {
 		fmt.Printf("Error al iniciar el servidor: %v\n", err)
 	}

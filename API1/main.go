@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -28,7 +29,8 @@ const (
 	carnet   = "202302232"
 	vmNumber = "1"
 	apiName  = "API1"
-	port     = ":8081"
+	host     = "0.0.0.0"
+	port     = "8080"
 )
 
 // Handler para /health
@@ -52,8 +54,13 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // Handler para /api1/202302232/call-api2
 func callAPI2Handler(w http.ResponseWriter, r *http.Request) {
+	api2URL := os.Getenv("API2_URL")
+	if api2URL == "" {
+		api2URL = "https://localhost:8082/health"
+	}
+
 	// Hacer la llamada HTTP a API2
-	resp, err := http.Get("http://localhost:8082/health")
+	resp, err := http.Get(api2URL)
 
 	// Declaramos la variable connection (inicialmente false)
 	connection := false
@@ -92,8 +99,13 @@ func callAPI2Handler(w http.ResponseWriter, r *http.Request) {
 
 // Handler para /api1/202302232/call-api3
 func callAPI3Handler(w http.ResponseWriter, r *http.Request) {
+	api3URL := os.Getenv("API3_URL")
+	if api3URL == "" {
+		api3URL = "http://localhost:8083/health" // Valor por defecto
+	}
+
 	// Misma lógica que callAPI2Handler, pero llamando a API3
-	resp, err := http.Get("http://localhost:8083/health")
+	resp, err := http.Get(api3URL)
 
 	connection := false
 
@@ -132,14 +144,15 @@ func main() {
 	http.HandleFunc("/api1/"+carnet+"/call-api3", callAPI3Handler)
 
 	//Mensaje en consola para saber que está ocurriendo
-	fmt.Printf("Servidor %s corriendo en http://localhost%s\n", apiName, port)
+	fullAddress := host + ":" + port
+	fmt.Printf("Servidor %s corriendo en %s\n", apiName, fullAddress)
 	fmt.Printf("Endpoints disponibles:\n")
 	fmt.Printf("   GET /health\n")
 	fmt.Printf("   GET /api1/%s/call-api2\n", carnet)
 	fmt.Printf("   GET /api1/%s/call-api3\n", carnet)
 
 	// Iniciar el servidor
-	err := http.ListenAndServe(port, nil)
+	err := http.ListenAndServe(fullAddress, nil)
 	if err != nil {
 		fmt.Printf("Error al iniciar el servidor: %v\n", err)
 	}
