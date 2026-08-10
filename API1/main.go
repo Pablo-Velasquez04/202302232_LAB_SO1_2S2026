@@ -56,7 +56,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func callAPI2Handler(w http.ResponseWriter, r *http.Request) {
 	api2URL := os.Getenv("API2_URL")
 	if api2URL == "" {
-		api2URL = "https://localhost:8082/health"
+		api2URL = "http://localhost:8082/health"
 	}
 
 	// Hacer la llamada HTTP a API2
