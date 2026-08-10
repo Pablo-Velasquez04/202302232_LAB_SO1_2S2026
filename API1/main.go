@@ -13,7 +13,7 @@ type HealthResponse struct {
 	Status    string `json:"status"`
 	Message   string `json:"message"`
 	Timestamp string `json:"timestamp"`
-	VM        string `json:"VM"`
+	VM        int    `json:"VM"`
 	Carnet    string `json:"carnet"`
 }
 
@@ -27,7 +27,7 @@ type CallResponse struct {
 // variables constantes
 const (
 	carnet   = "202302232"
-	vmNumber = "1"
+	vmNumber = 1
 	apiName  = "API1"
 	host     = "0.0.0.0"
 	port     = "8080"
@@ -82,14 +82,14 @@ func callAPI2Handler(w http.ResponseWriter, r *http.Request) {
 	// Construir la respuesta final
 	respuesta := CallResponse{
 		Apiname:    "API2",
-		Message:    "The API2 located on the VM2 is working",
+		Message:    "The API2 located on the VM1 is working",
 		Connection: connection,
 		Carnet:     carnet,
 	}
 
 	// Si connection es false, cambiar el mensaje
 	if !connection {
-		respuesta.Message = "ERROR: The API2 located on the VM2 is not working"
+		respuesta.Message = "ERROR: The API2 located on the VM1 is not working"
 	}
 
 	// Enviar la respuesta al cliente
@@ -122,13 +122,13 @@ func callAPI3Handler(w http.ResponseWriter, r *http.Request) {
 
 	respuesta := CallResponse{
 		Apiname:    "API3",
-		Message:    "The API3 located on the VM3 is working",
+		Message:    "The API3 located on the VM2 is working",
 		Connection: connection,
 		Carnet:     carnet,
 	}
 
 	if !connection {
-		respuesta.Message = "ERROR: The API3 located on the VM3 is not working"
+		respuesta.Message = "ERROR: The API3 located on the VM2 is not working"
 	}
 
 	// Enviar la respuesta al cliente
