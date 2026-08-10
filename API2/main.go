@@ -79,15 +79,15 @@ func callAPI1Handler(w http.ResponseWriter, r *http.Request) {
 
 	// Construir la respuesta final
 	respuesta := CallResponse{
-		Apiname:    "API2",
-		Message:    "The API2 located on the VM2 is working",
+		Apiname:    "API1",
+		Message:    "The API1 located on the VM1 is working",
 		Connection: connection,
 		Carnet:     carnet,
 	}
 
 	// Si connection es false, cambiar el mensaje
 	if !connection {
-		respuesta.Message = "ERROR: The API2 located on the VM2 is not working"
+		respuesta.Message = "ERROR: The API1 located on the VM1 is not working"
 	}
 
 	// Enviar la respuesta al cliente
@@ -118,14 +118,14 @@ func callAPI3Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respuesta := CallResponse{
-		Apiname:    "API2",
-		Message:    "The API2 located on the VM2 is working",
+		Apiname:    "API3",
+		Message:    "The API3 located on the VM3 is working",
 		Connection: connection,
 		Carnet:     carnet,
 	}
 
 	if !connection {
-		respuesta.Message = "ERROR: The API2 located on the VM2 is not working"
+		respuesta.Message = "ERROR: The API3 located on the VM3 is not working"
 	}
 
 	// Enviar la respuesta al cliente
