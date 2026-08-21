@@ -180,3 +180,197 @@ El proyecto final aprueba con totalidad la hoja de requisitos planteada. A conti
 - **Nomenclatura Estandarizada:** El registro ZOT en la VM3 valida el nombre de todas las capas generadas confirmando el uso de `api1-202302232`, `api2-202302232` y `api3-202302232`.
 - **Enrutamiento Cruzado de Contenedores:** La comunicación por `curl` a cualquier API que consulte a una API en una máquina virtual externa (Ej. VM1 -> VM2) devuelve invariablemente un JSON con sintaxis impecable y el valor booleano correcto.
 - **Sistema Init de Linux:** Se justifica la no existencia de `systemctl` al momento de calificar, dado que la arquitectura basada en `Alpine Linux` utiliza `OpenRC` para administrar los servicios (demostrable mediante `rc-service containerd status`).
+
+---
+
+## 7. Pruebas de Validación Funcional
+
+Esta sección documenta con evidencia gráfica el funcionamiento comprobado de cada componente del sistema.
+
+---
+
+### Inicio de Servicios
+
+Antes de ejecutar cualquier prueba, se encendieron los contenedores en cada VM con los siguientes comandos:
+
+```bash
+# VM1 (Containerd)
+sudo nerdctl start api1 api2
+
+# VM2 (Podman)
+sudo podman start api3
+
+# VM3 (Docker)
+docker start zot-registry
+```
+
+![Inicio de contenedores en las 3 VMs](Imagenes/00_inicio_contenedores.png)
+
+---
+
+### 7.1 Preparación del Entorno
+
+#### 7.1.1 Validación de Máquinas Virtuales y KVM
+
+Ejecutado desde la terminal del **Ubuntu Host**:
+
+```bash
+# Información del host
+neofetch
+
+# Listar las máquinas virtuales activas
+virsh list --all
+```
+
+![Neofetch y listado de VMs en KVM](Imagenes/01_virsh_list.png)
+
+---
+
+#### 7.1.2 Validación de Runtimes
+
+**VM1 – Containerd** (`ssh root@192.168.122.121`):
+
+```bash
+sudo nerdctl namespace ls
+sudo nerdctl ps -a
+sudo nerdctl images
+```
+
+![Validación de Containerd en VM1](Imagenes/02_vm1_containerd.png)
+
+---
+
+**VM2 – Podman** (`ssh root@192.168.122.41`):
+
+```bash
+podman info
+docker info
+```
+
+![Validación de Podman en VM2 (sin Docker instalado)](Imagenes/03_vm2_podman.png)
+
+---
+
+**VM3 – Docker** (`ssh root@192.168.122.229`):
+
+```bash
+docker info
+```
+
+![Validación de Docker en VM3](Imagenes/04_vm3_docker.png)
+
+---
+
+### 7.2 Desarrollo y Contenerización
+
+#### 7.2.1 Contenedores en Ejecución
+
+**VM1 (API1 y API2):**
+
+```bash
+sudo nerdctl ps
+```
+
+![Contenedores activos en VM1](Imagenes/05_vm1_nerdctl_ps.png)
+
+---
+
+**VM2 (API3):**
+
+```bash
+podman ps
+```
+
+![Contenedor activo en VM2](Imagenes/06_vm2_podman_ps.png)
+
+---
+
+**VM3 (ZOT Registry):**
+
+```bash
+docker ps
+```
+
+![Contenedor ZOT activo en VM3](Imagenes/07_vm3_docker_ps.png)
+
+---
+
+#### 7.2.2 Endpoints /health
+
+Ejecutado desde la terminal del **Ubuntu Host**:
+
+```bash
+# API1 - Puerto 8081 (VM1)
+curl -s http://192.168.122.121:8081/health | jq .
+
+# API2 - Puerto 8082 (VM1)
+curl -s http://192.168.122.121:8082/health | jq .
+```
+
+![Health check API1 y API2](Imagenes/08_health_api1_api2.png)
+
+```bash
+# API3 - Puerto 8083 (VM2)
+curl -s http://192.168.122.41:8083/health | jq .
+```
+
+![Health check API3](Imagenes/09_health_api3.png)
+
+---
+
+### 7.3 Registros y Comunicación Cruzada
+
+#### 7.3.1 ZOT Registry – Catálogo de Imágenes
+
+```bash
+curl -s http://192.168.122.229:5000/v2/_catalog
+```
+
+![Catálogo de imágenes almacenadas en ZOT](Imagenes/10_zot_catalog.png)
+
+---
+
+#### 7.3.2 Comunicación entre APIs (Escenario Exitoso)
+
+```bash
+# API1 llama a API2 (dentro de VM1)
+curl -s http://192.168.122.121:8081/api1/202302232/call-api2 | jq .
+
+# API1 llama a API3 (VM1 → VM2)
+curl -s http://192.168.122.121:8081/api1/202302232/call-api3 | jq .
+
+# API2 llama a API1
+curl -s http://192.168.122.121:8082/api2/202302232/call-api1 | jq .
+
+# API2 llama a API3 (VM1 → VM2)
+curl -s http://192.168.122.121:8082/api2/202302232/call-api3 | jq .
+
+# API3 llama a API1 (VM2 → VM1)
+curl -s http://192.168.122.41:8083/api3/202302232/call-api1 | jq .
+
+# API3 llama a API2 (VM2 → VM1)
+curl -s http://192.168.122.41:8083/api3/202302232/call-api2 | jq .
+```
+
+![Comunicación cruzada exitosa entre las 3 APIs](Imagenes/11_comunicacion_cruzada.png)
+
+---
+
+#### 7.3.3 Tolerancia a Fallos (VM detenida)
+
+Se detiene `api3` para simular una caída y se verifica que la respuesta sea `"connection": false`:
+
+```bash
+# Paso 1: Detener api3 en VM2
+sudo podman stop api3
+
+# Paso 2: Llamar a api3 desde api1
+curl -s http://192.168.122.121:8081/api1/202302232/call-api3 | jq .
+```
+
+![Tolerancia a fallos – connection false cuando API3 está detenida](Imagenes/12_tolerancia_fallos.png)
+
+```bash
+# Restaurar api3
+sudo podman start api3
+```
