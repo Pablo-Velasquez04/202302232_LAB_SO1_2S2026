@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Imagenes para la carga de trabajo
+IMAGES=(
+  "img-alto-cpu"
+  "img-alto-ram"
+  "img-bajo-consumo"
+  "img-intruso"
+)
+
+# Creación aleatoria de 5 contenedores
+for i in {1..5}
+do
+    RAND_INDEX=$((RANDOM % 4))
+    SELECTED_IMAGE=${IMAGES[$RAND_INDEX]}
+    
+    CONTAINER_NAME="contenedor_${SELECTED_IMAGE}_$(date +%s)_$i"
+    
+    docker run -d --name "$CONTAINER_NAME" "$SELECTED_IMAGE" > /dev/null
+done

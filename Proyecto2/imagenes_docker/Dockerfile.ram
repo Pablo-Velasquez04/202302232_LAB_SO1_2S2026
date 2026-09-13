@@ -1,0 +1,2 @@
+FROM alpine:latest
+CMD ["sh", "-c", "tail /dev/zero | head -c 150M | tail; sleep 240"]
