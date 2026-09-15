@@ -1,3 +1,4 @@
+Hola estoy editando este archivo jajajaj
 MÓDULO DE KERNEL
 Deberá crear un módulo que capture las métricas necesarias para el análisis de la memoria
 y los contenedores activos en el sistema.

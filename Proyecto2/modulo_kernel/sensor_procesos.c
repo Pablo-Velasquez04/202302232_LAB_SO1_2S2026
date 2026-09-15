@@ -28,13 +28,13 @@ static int escribir_archivo(struct seq_file *m, void *v) {
     free_ram_mb = (si.freeram * si.mem_unit) / (1024 * 1024);
     used_ram_mb = total_ram_mb - free_ram_mb;
 
-    seq_printf(m, "=== METRICAS DEL SISTEMA ===\n");
+    seq_printf(m, "======== METRICAS DEL SISTEMA ========\n");
     seq_printf(m, "Total RAM: %lu MB\n", total_ram_mb);
     seq_printf(m, "Free RAM: %lu MB\n", free_ram_mb);
     seq_printf(m, "Used RAM: %lu MB\n\n", used_ram_mb);
     
     // 2. Lógica de Procesos
-    seq_printf(m, "=== METRICAS DE PROCESOS ===\n");
+    seq_printf(m, "======== METRICAS DE PROCESOS ========\n");
     // Cabeceras solicitadas (PID, Nombre, VSZ, RSS, Memoria, CPU)
     seq_printf(m, "PID\tNombre\t\tVSZ(KB)\tRSS(KB)\tMem(%%)\tCPU\n");
 
