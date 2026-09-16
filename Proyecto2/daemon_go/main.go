@@ -26,7 +26,7 @@ type ContenedorData struct {
 }
 
 func main() {
-	fmt.Println("=== Iniciando Daemon (Fase 1) ===")
+	fmt.Println("========== Iniciando Daemon (Fase 1) ==========")
 
 	// 1. Obtener la relación PID -> ID del contenedor desde Docker
 	dockerMap, err := mapearContenedores()
@@ -44,7 +44,7 @@ func main() {
 	}
 
 	// 3. Mostrar los resultados procesados
-	fmt.Println("\n=== Contenedores Filtrados y Parseados ===")
+	fmt.Println("\n========== Contenedores Filtrados y Parseados ==========")
 	for _, c := range contenedores {
 		fmt.Printf("ID: %s | PID: %d | Mem(%%): %d | CPU: %d\n", c.ID, c.PID, c.MemPercent, c.CPU)
 	}

@@ -3,7 +3,7 @@
 # Imagenes para la carga de trabajo
 IMAGES=(
   "img-alto-cpu"
-  "img-alto-ram"
+  "roldyoran/go-client"
   "img-bajo-consumo"
   "img-intruso"
 )
