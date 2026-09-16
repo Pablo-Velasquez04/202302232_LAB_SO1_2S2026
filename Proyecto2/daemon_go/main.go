@@ -46,7 +46,7 @@ func main() {
 	// 3. Mostrar los resultados procesados
 	fmt.Println("\n========== Contenedores Filtrados y Parseados ==========")
 	for _, c := range contenedores {
-		fmt.Printf("ID: %s | PID: %d | Mem(%%): %d | CPU: %d\n", c.ID, c.PID, c.MemPercent, c.CPU)
+		fmt.Printf("ID: %s | PID: %d | RSS: %d KB | CPU: %d\n", c.ID, c.PID, c.RSS, c.CPU)
 	}
 }
 
