@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  valkey:
+    image: valkey/valkey:latest
+    container_name: valkey_db
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - valkey_data:/data
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana_dashboard
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - valkey
+
+volumes:
+  valkey_data:
+  grafana_data:
