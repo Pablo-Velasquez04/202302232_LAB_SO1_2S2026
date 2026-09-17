@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -42,69 +46,106 @@ type SystemMetrics struct {
 	UsedRAM  uint64
 }
 
-func main() {
-	fmt.Println("========== Iniciando Daemon (Fase 1, 2 y 3) ==========")
+// Mapa global compartido entre el loop principal y la goroutine eBPF.
+// Protegido por un mutex para acceso concurrente seguro.
+var (
+	dockerMapMu     sync.RWMutex
+	dockerMapGlobal map[int]DockerInfo
+)
 
-	// 1. Conexión a Docker
+func main() {
+	fmt.Println("========== Iniciando Daemon (Fase 1, 2, 3 + eBPF) ==========")
+
+	// --- Conexión a Docker ---
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		fmt.Printf("Error al crear cliente Docker: %v\n", err)
-		return
+		log.Fatalf("Error al crear cliente Docker: %v", err)
 	}
 
-	// 2. Conexión a Valkey/Redis
+	// --- Conexión a Valkey/Redis ---
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379", // Si Valkey está en docker, mapea el puerto 6379 o usa su IP
-		Password: "",               // Sin contraseña por defecto
+		Addr:     "localhost:6379",
+		Password: "",
 		DB:       0,
 	})
 
-	_, err = rdb.Ping(context.Background()).Result()
-	if err != nil {
-		fmt.Printf("Advertencia: No se pudo conectar a Valkey en localhost:6379: %v\n", err)
-		fmt.Println("Asegúrate de tener Valkey ejecutándose (docker run -p 6379:6379 -d valkey/valkey).")
+	if _, err = rdb.Ping(context.Background()).Result(); err != nil {
+		fmt.Printf("Advertencia: No se pudo conectar a Valkey: %v\n", err)
+		rdb = nil
 	} else {
 		fmt.Println("Conexión exitosa a Valkey.")
 	}
 
-	// 3. Iniciar Loop Principal (20 segundos)
+	// --- Inicializar mapa Docker global ---
+	dockerMapGlobal, _ = mapearContenedores(cli)
+
+	// --- Cargar y ejecutar la sonda eBPF en una goroutine dedicada ---
+	// La función iniciarSondaEBPF está definida en ebpf_probe.go
+	go iniciarSondaEBPF(rdb)
+
+	// --- Manejar señales para cierre limpio (Ctrl+C) ---
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+
+	// --- Loop Principal (cada 20 segundos) ---
 	fmt.Println("Iniciando loop principal (cada 20 segundos)...")
 	ticker := time.NewTicker(20 * time.Second)
 
-	// Ejecutar la primera iteración inmediatamente
+	// Primera iteración inmediata
 	ejecutarIteracion(cli, rdb)
 
-	for range ticker.C {
-		ejecutarIteracion(cli, rdb)
+	for {
+		select {
+		case <-ticker.C:
+			ejecutarIteracion(cli, rdb)
+		case <-sig:
+			fmt.Println("\nSeñal de cierre recibida. Apagando Daemon...")
+			ticker.Stop()
+			return
+		}
 	}
 }
 
 func ejecutarIteracion(cli *client.Client, rdb *redis.Client) {
 	fmt.Printf("\n--- Ejecutando análisis (%s) ---\n", time.Now().Format("15:04:05"))
 
-	dockerMap, err := mapearContenedores(cli)
+	// Actualizar mapa Docker global (protegido con mutex)
+	nuevoDM, err := mapearContenedores(cli)
 	if err != nil {
 		fmt.Printf("Error al conectar con Docker: %v\n", err)
 		return
 	}
+	dockerMapMu.Lock()
+	dockerMapGlobal = nuevoDM
+	dockerMapMu.Unlock()
 
-	contenedores, sysMetrics, err := leerYFiltrarProc(procFilePath, dockerMap)
+	contenedores, sysMetrics, err := leerYFiltrarProc(procFilePath, nuevoDM)
 	if err != nil {
 		fmt.Printf("Error al leer /proc: %v\n", err)
 		return
 	}
 
-	fmt.Printf("RAM Total: %d MB | RAM Usada: %d MB | RAM Libre: %d MB\n", sysMetrics.TotalRAM, sysMetrics.UsedRAM, sysMetrics.FreeRAM)
+	fmt.Printf("RAM Total: %d MB | RAM Usada: %d MB | RAM Libre: %d MB\n",
+		sysMetrics.TotalRAM, sysMetrics.UsedRAM, sysMetrics.FreeRAM)
+	fmt.Printf("Contenedores detectados: %d\n", len(contenedores))
+	for _, c := range contenedores {
+		fmt.Printf("  -> ID: %s | %s | PID: %d | RSS: %d KB | CPU: %d\n",
+			c.ID, c.Name, c.PID, c.RSS, c.CPU)
+	}
 
-	kills := gestionarContenedores(cli, contenedores)
+	// Gestionar contenedores (matar excedentes e intrusos).
+	// NOTA: El registro en Valkey de "eliminados" ya NO ocurre aquí,
+	// sino en la goroutine eBPF (ebpf_probe.go) al recibir confirmación del kernel.
+	gestionarContenedores(cli, contenedores)
 
+	// Guardar métricas generales de RAM y rankings
 	if rdb != nil {
-		guardarEnValkey(rdb, sysMetrics, contenedores, kills)
-		fmt.Println("-> Métricas almacenadas en Valkey exitosamente.")
+		guardarMetricasGenerales(rdb, sysMetrics, contenedores)
+		fmt.Println("-> Métricas generales almacenadas en Valkey exitosamente.")
 	}
 }
 
-// mapearContenedores devuelve un diccionario donde la llave es el PID y el valor es la info de Docker
+// mapearContenedores devuelve un diccionario PID -> DockerInfo para todos los contenedores activos
 func mapearContenedores(cli *client.Client) (map[int]DockerInfo, error) {
 	lista, err := cli.ContainerList(context.Background(), container.ListOptions{})
 	if err != nil {
@@ -126,7 +167,7 @@ func mapearContenedores(cli *client.Client) (map[int]DockerInfo, error) {
 	return mapa, nil
 }
 
-// leerYFiltrarProc lee el archivo del kernel y extrae métricas de contenedores y sistema
+// leerYFiltrarProc lee el archivo del kernel y extrae métricas del sistema y de contenedores
 func leerYFiltrarProc(ruta string, dockerMap map[int]DockerInfo) ([]ContenedorData, SystemMetrics, error) {
 	archivo, err := os.Open(ruta)
 	if err != nil {
@@ -137,7 +178,6 @@ func leerYFiltrarProc(ruta string, dockerMap map[int]DockerInfo) ([]ContenedorDa
 	var contenedoresFiltrados []ContenedorData
 	var sysMetrics SystemMetrics
 	scanner := bufio.NewScanner(archivo)
-
 	leyendoProcesos := false
 
 	for scanner.Scan() {
@@ -146,33 +186,28 @@ func leerYFiltrarProc(ruta string, dockerMap map[int]DockerInfo) ([]ContenedorDa
 			continue
 		}
 
-		// Leer métricas globales del sistema
 		if strings.HasPrefix(linea, "Total RAM:") {
-			fields := strings.Fields(linea)
-			if len(fields) >= 3 {
+			if fields := strings.Fields(linea); len(fields) >= 3 {
 				val, _ := strconv.ParseUint(fields[2], 10, 64)
 				sysMetrics.TotalRAM = val
 			}
 			continue
 		}
 		if strings.HasPrefix(linea, "Free RAM:") {
-			fields := strings.Fields(linea)
-			if len(fields) >= 3 {
+			if fields := strings.Fields(linea); len(fields) >= 3 {
 				val, _ := strconv.ParseUint(fields[2], 10, 64)
 				sysMetrics.FreeRAM = val
 			}
 			continue
 		}
 		if strings.HasPrefix(linea, "Used RAM:") {
-			fields := strings.Fields(linea)
-			if len(fields) >= 3 {
+			if fields := strings.Fields(linea); len(fields) >= 3 {
 				val, _ := strconv.ParseUint(fields[2], 10, 64)
 				sysMetrics.UsedRAM = val
 			}
 			continue
 		}
 
-		// Detectar inicio de tabla de procesos
 		if strings.Contains(linea, "PID\tNombre") {
 			leyendoProcesos = true
 			continue
@@ -181,53 +216,42 @@ func leerYFiltrarProc(ruta string, dockerMap map[int]DockerInfo) ([]ContenedorDa
 		if leyendoProcesos {
 			columnas := strings.Fields(linea)
 			if len(columnas) >= 6 {
-				pidStr := columnas[0]
-				pid, _ := strconv.Atoi(pidStr)
-
+				pid, _ := strconv.Atoi(columnas[0])
 				if dInfo, existe := dockerMap[pid]; existe {
 					vsz, _ := strconv.Atoi(columnas[2])
 					rss, _ := strconv.Atoi(columnas[3])
 					memPercent, _ := strconv.Atoi(columnas[4])
 					cpuVal, _ := strconv.Atoi(columnas[5])
-
-					datos := ContenedorData{
-						ID:         dInfo.ID,
-						Name:       dInfo.Name,
-						Image:      dInfo.Image,
-						PID:        pid,
-						VSZ:        vsz,
-						RSS:        rss,
-						MemPercent: memPercent,
-						CPU:        cpuVal,
-					}
-					contenedoresFiltrados = append(contenedoresFiltrados, datos)
+					contenedoresFiltrados = append(contenedoresFiltrados, ContenedorData{
+						ID: dInfo.ID, Name: dInfo.Name, Image: dInfo.Image,
+						PID: pid, VSZ: vsz, RSS: rss, MemPercent: memPercent, CPU: cpuVal,
+					})
 				}
 			}
 		}
 	}
-
 	return contenedoresFiltrados, sysMetrics, scanner.Err()
 }
 
-// gestionarContenedores aplica el algoritmo de selección y eliminación según reglas. Devuelve contenedores matados.
-func gestionarContenedores(cli *client.Client, contenedores []ContenedorData) int {
-	var bajoConsumo []ContenedorData
-	var altoConsumo []ContenedorData
-	var intrusos []ContenedorData
+// gestionarContenedores aplica el algoritmo de selección y eliminación según las reglas del proyecto
+func gestionarContenedores(cli *client.Client, contenedores []ContenedorData) {
+	var bajoConsumo, altoConsumo, intrusos []ContenedorData
 
 	for _, c := range contenedores {
 		img := strings.ToLower(c.Image)
 		name := strings.ToLower(c.Name)
-
-		if strings.Contains(img, "bajo-consumo") || strings.Contains(name, "bajo-consumo") {
+		switch {
+		case strings.Contains(img, "bajo-consumo") || strings.Contains(name, "bajo-consumo"):
 			bajoConsumo = append(bajoConsumo, c)
-		} else if strings.Contains(img, "alto-cpu") || strings.Contains(img, "alto-ram") || strings.Contains(img, "go-client") || strings.Contains(name, "alto-cpu") || strings.Contains(name, "alto-ram") || strings.Contains(name, "go-client") {
+		case strings.Contains(img, "alto-cpu") || strings.Contains(img, "alto-ram") || strings.Contains(img, "go-client") ||
+			strings.Contains(name, "alto-cpu") || strings.Contains(name, "alto-ram") || strings.Contains(name, "go-client"):
 			altoConsumo = append(altoConsumo, c)
-		} else if strings.Contains(img, "intruso") || strings.Contains(name, "intruso") {
+		case strings.Contains(img, "intruso") || strings.Contains(name, "intruso"):
 			intrusos = append(intrusos, c)
 		}
 	}
 
+	// Ordenar: mayor consumo primero (MemPercent > RSS > VSZ > CPU)
 	ordenar := func(lista []ContenedorData) {
 		sort.Slice(lista, func(i, j int) bool {
 			if lista[i].MemPercent != lista[j].MemPercent {
@@ -242,51 +266,43 @@ func gestionarContenedores(cli *client.Client, contenedores []ContenedorData) in
 			return lista[i].CPU > lista[j].CPU
 		})
 	}
-
 	ordenar(bajoConsumo)
 	ordenar(altoConsumo)
 
-	kills := 0
 	matar := func(c ContenedorData, razon string) {
 		fmt.Printf("-> Matando contenedor %s (ID: %s) - Razón: %s\n", c.Name, c.ID, razon)
-		err := cli.ContainerKill(context.Background(), c.ID, "SIGKILL")
-		if err != nil {
+		if err := cli.ContainerKill(context.Background(), c.ID, "SIGKILL"); err != nil {
 			fmt.Printf("   Error matando %s: %v\n", c.ID, err)
 		} else {
-			fmt.Printf("   Contenedor %s terminado exitosamente.\n", c.ID)
-			kills++
+			fmt.Printf("   SIGKILL enviado a %s. Esperando confirmación del kernel vía eBPF...\n", c.ID)
 		}
 	}
 
-	if len(bajoConsumo) > 3 {
-		for i := 0; i < len(bajoConsumo)-3; i++ {
-			matar(bajoConsumo[i], "Exceso de bajo consumo (optimización de recursos)")
-		}
+	// Regla: máximo 3 contenedores de bajo consumo
+	for i := 0; i < len(bajoConsumo)-3; i++ {
+		matar(bajoConsumo[i], "Exceso de bajo consumo")
 	}
-
-	if len(altoConsumo) > 2 {
-		for i := 0; i < len(altoConsumo)-2; i++ {
-			matar(altoConsumo[i], "Exceso de alto consumo (optimización de recursos)")
-		}
+	// Regla: máximo 2 contenedores de alto consumo
+	for i := 0; i < len(altoConsumo)-2; i++ {
+		matar(altoConsumo[i], "Exceso de alto consumo")
 	}
-
+	// Regla: eliminar todos los intrusos
 	for _, c := range intrusos {
 		matar(c, "Contenedor intruso detectado")
 	}
-
-	return kills
 }
 
-// guardarEnValkey persiste todas las métricas en Redis/Valkey para Grafana
-func guardarEnValkey(rdb *redis.Client, sysMetrics SystemMetrics, contenedores []ContenedorData, kills int) {
+// guardarMetricasGenerales persiste RAM y rankings en Valkey.
+// El registro de contenedores eliminados ("killed_history") lo maneja ebpf_probe.go.
+func guardarMetricasGenerales(rdb *redis.Client, sysMetrics SystemMetrics, contenedores []ContenedorData) {
 	ctx := context.Background()
 
-	// 1. Visión General (Datos en Texto para Tarjetas de Grafana)
-	rdb.Set(ctx, "total_ram", fmt.Sprintf("%d MB", sysMetrics.TotalRAM), 0)
-	rdb.Set(ctx, "used_ram", fmt.Sprintf("%d MB", sysMetrics.UsedRAM), 0)
-	rdb.Set(ctx, "free_ram", fmt.Sprintf("%d MB", sysMetrics.FreeRAM), 0)
+	// Tarjetas (valores actuales)
+	rdb.Set(ctx, "total_ram", sysMetrics.TotalRAM, 0)
+	rdb.Set(ctx, "used_ram", sysMetrics.UsedRAM, 0)
+	rdb.Set(ctx, "free_ram", sysMetrics.FreeRAM, 0)
 
-	// 2. Evolución Temporal (Streams para series de tiempo)
+	// Serie de tiempo de RAM
 	rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: "ram_history",
 		Values: map[string]interface{}{
@@ -295,23 +311,13 @@ func guardarEnValkey(rdb *redis.Client, sysMetrics SystemMetrics, contenedores [
 		},
 	})
 
-	// Registrar siempre, incluso si es 0, para mantener continuidad en la gráfica
-	rdb.XAdd(ctx, &redis.XAddArgs{
-		Stream: "killed_history",
-		Values: map[string]interface{}{
-			"killed_count": kills,
-		},
-	})
-
-	// 3. Top Rankings
-	// Ordenar todos los contenedores por RAM (descendente)
+	// Top 5 por RSS (RAM física)
 	sort.Slice(contenedores, func(i, j int) bool {
 		if contenedores[i].MemPercent != contenedores[j].MemPercent {
 			return contenedores[i].MemPercent > contenedores[j].MemPercent
 		}
 		return contenedores[i].RSS > contenedores[j].RSS
 	})
-
 	rdb.Del(ctx, "top_ram")
 	for i, c := range contenedores {
 		if i >= 5 {
@@ -323,11 +329,10 @@ func guardarEnValkey(rdb *redis.Client, sysMetrics SystemMetrics, contenedores [
 		})
 	}
 
-	// Ordenar todos los contenedores por CPU (descendente)
+	// Top 5 por CPU
 	sort.Slice(contenedores, func(i, j int) bool {
 		return contenedores[i].CPU > contenedores[j].CPU
 	})
-
 	rdb.Del(ctx, "top_cpu")
 	for i, c := range contenedores {
 		if i >= 5 {
