@@ -221,7 +221,7 @@ func gestionarContenedores(cli *client.Client, contenedores []ContenedorData) in
 
 		if strings.Contains(img, "bajo-consumo") || strings.Contains(name, "bajo-consumo") {
 			bajoConsumo = append(bajoConsumo, c)
-		} else if strings.Contains(img, "alto-cpu") || strings.Contains(img, "go-client") || strings.Contains(name, "alto-cpu") || strings.Contains(name, "go-client") {
+		} else if strings.Contains(img, "alto-cpu") || strings.Contains(img, "alto-ram") || strings.Contains(img, "go-client") || strings.Contains(name, "alto-cpu") || strings.Contains(name, "alto-ram") || strings.Contains(name, "go-client") {
 			altoConsumo = append(altoConsumo, c)
 		} else if strings.Contains(img, "intruso") || strings.Contains(name, "intruso") {
 			intrusos = append(intrusos, c)
