@@ -301,6 +301,7 @@ func guardarMetricasGenerales(rdb *redis.Client, sysMetrics SystemMetrics, conte
 	rdb.Set(ctx, "total_ram", sysMetrics.TotalRAM, 0)
 	rdb.Set(ctx, "used_ram", sysMetrics.UsedRAM, 0)
 	rdb.Set(ctx, "free_ram", sysMetrics.FreeRAM, 0)
+	rdb.Set(ctx, "total_containers", len(contenedores), 0)
 
 	// Serie de tiempo de RAM
 	rdb.XAdd(ctx, &redis.XAddArgs{
