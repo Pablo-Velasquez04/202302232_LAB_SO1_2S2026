@@ -14,7 +14,8 @@ do
     RAND_INDEX=$((RANDOM % 4))
     SELECTED_IMAGE=${IMAGES[$RAND_INDEX]}
     
-    CONTAINER_NAME="contenedor_${SELECTED_IMAGE}_$(date +%s)_$i"
+    CLEAN_NAME=${SELECTED_IMAGE////_}
+    CONTAINER_NAME="contenedor_${CLEAN_NAME}_$(date +%s)_$i"
     
     docker run -d --name "$CONTAINER_NAME" "$SELECTED_IMAGE" > /dev/null
 done
