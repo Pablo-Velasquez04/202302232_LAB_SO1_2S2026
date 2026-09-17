@@ -1,15 +1,11 @@
 // +build ignore
 
-// Definimos los tipos básicos manualmente para evitar depender de linux/types.h
-// y asm/types.h, los cuales causan problemas de rutas en diferentes versiones de Ubuntu.
-typedef unsigned char __u8;
-typedef short int __s16;
-typedef short unsigned int __u16;
-typedef int __s32;
-typedef unsigned int __u32;
-typedef long long int __s64;
-typedef long long unsigned int __u64;
-
+// ORDEN CRÍTICO de includes para compilar eBPF con clang en Ubuntu:
+// 1. linux/bpf.h primero (define __u32, __u64 etc.)
+//    Requiere el flag: -I/usr/include/x86_64-linux-gnu  (en ebpf_gen.go)
+//    para que clang encuentre asm/types.h vía la ruta de arquitectura.
+// 2. Después los helpers de libbpf, que usan esos tipos.
+#include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
