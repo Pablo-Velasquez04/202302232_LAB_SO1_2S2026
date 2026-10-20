@@ -1,0 +1,12 @@
+image:
+  repository: zot:5000/munk8s/valkey
+  tag: "8"
+  pullPolicy: IfNotPresent
+maxmemory: 100mb
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits:   { cpu: 300m, memory: 256Mi }
