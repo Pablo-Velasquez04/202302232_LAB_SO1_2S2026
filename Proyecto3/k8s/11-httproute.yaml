@@ -5,7 +5,7 @@ spec:
   parentRefs: [{ name: munk8s-gateway }]
   rules:
   - matches:
-    - path: { type: PathPrefix, value: /grpc-${CARNET} }
+    - path: { type: PathPrefix, value: /grpc-202302232 }
     filters:
     - type: URLRewrite
       urlRewrite:

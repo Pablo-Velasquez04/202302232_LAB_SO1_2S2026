@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: go-api, namespace: apps }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: go-api } }
+  template:
+    metadata: { labels: { app: go-api } }
+    spec:
+      containers:
+      - name: api
+        image: zot:5000/munk8s/go-api:v1
+        ports: [{ containerPort: 8081 }]
+        env:
+        - { name: GOMEMLIMIT, value: "60MiB" }   # el GC de Go respeta el límite del pod
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 96Mi }
+        readinessProbe:
+          httpGet: { path: /health, port: 8081 }
+          initialDelaySeconds: 2
+      - name: grpc-client
+        image: zot:5000/munk8s/go-grpc-client:v1
+        env:
+        - { name: GRPC_SERVER_ADDR, value: "grpc-server:50051" }
+        - { name: GOMEMLIMIT, value: "60MiB" }
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 96Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: go-api, namespace: apps }
+spec:
+  selector: { app: go-api }
+  ports: [{ port: 8081, targetPort: 8081 }]

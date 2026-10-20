@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: grpc-server, namespace: apps }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: grpc-server } }
+  template:
+    metadata: { labels: { app: grpc-server } }
+    spec:
+      containers:
+      - name: grpc-server
+        image: zot:5000/munk8s/go-grpc-server:v1
+        ports: [{ containerPort: 50051 }]
+        env:
+        - { name: GOMEMLIMIT, value: "60MiB" }
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 96Mi }
+---
+# Headless: el DNS devuelve la IP de cada réplica, así gRPC reparte la carga (round_robin)
+apiVersion: v1
+kind: Service
+metadata: { name: grpc-server, namespace: apps }
+spec:
+  clusterIP: None
+  selector: { app: grpc-server }
+  ports: [{ port: 50051, targetPort: 50051 }]
