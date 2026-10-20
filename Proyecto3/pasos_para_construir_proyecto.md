@@ -1,79 +1,361 @@
-Diseño de este bloque. El enunciado pide que el Go Deployment 1 tenga 2 containers (API REST + cliente gRPC). Para probar el camino gRPC completo hoy, también levantamos el Deployment 2 con el gRPC Server en modo básico (responde ok). En el siguiente bloque le agregamos el container Writer que publica en RabbitMQ.
+Paso 16: RabbitMQ en el namespace messaging
 
-Locust → Gateway → Rust → [pod go-api: api → grpc-client] ──gRPC──► [pod grpc-server]
-Paso 10: Herramientas gRPC y módulo Go (ya lo hice, solo comprueba que este todo este paso 10)
+Todas las imágenes deben venir de Zot, así que primero la subimos:
+
 bash
 cd ~/<TU_REPO>/proyecto3
-sudo pacman -S --needed protobuf
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
-export PATH=$PATH:$(go env GOPATH)/bin     # agrégalo también a tu .zshrc/.bashrc
+docker pull rabbitmq:3.13-management-alpine
+docker tag rabbitmq:3.13-management-alpine zot:5000/munk8s/rabbitmq:3.13
+docker push zot:5000/munk8s/rabbitmq:3.13
 
-mkdir -p go-services/{proto,cmd/api,cmd/grpc-client,cmd/grpc-server}
-cd go-services
-go mod init munk8s
-
-Aquí va el .proto del enunciado, sin cambios:
+Crea las credenciales como Secret, sin dejarlas en el repo. El Writer y el Consumer están en apps, por eso va un Secret en cada namespace:
 
 bash
-cat > proto/war.proto <<'EOF'
-syntax = "proto3";
-package wartweets;
-option go_package = "./proto";
+export RABBIT_PASS=$(openssl rand -hex 8)
+for ns in messaging apps; do
+  kubectl create secret generic rabbit-cred -n $ns \
+    --from-literal=user=munk8s --from-literal=pass=$RABBIT_PASS
+done
 
-// Mensaje que se enviará
-message WarReportRequest {
-  Countries country = 1;
-  int32 warplanes_in_air = 2;
-  int32 warships_in_water = 3;
-  string timestamp = 4;
-}
+Manifiesto:
 
-// Lista de los únicos posibles países aceptados por el proyecto
-enum Countries {
-  countries_unknown = 0;
-  usa = 1;
-  rus = 2;
-  chn = 3;
-  esp = 4;
-  gtm = 5;
-}
-
-// Respuesta del servidor
-message WarReportResponse {
-  string status = 1;
-}
-
-// Servicio gRPC
-service WarReportService {
-  rpc SendReport (WarReportRequest) returns (WarReportResponse);
-}
+bash
+cat > k8s/30-rabbitmq.yaml <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: rabbit-conf, namespace: messaging }
+data:
+  20-memory.conf: |
+    vm_memory_high_watermark.absolute = 400MiB
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: rabbitmq, namespace: messaging }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: rabbitmq } }
+  template:
+    metadata: { labels: { app: rabbitmq } }
+    spec:
+      containers:
+      - name: rabbitmq
+        image: zot:5000/munk8s/rabbitmq:3.13
+        ports:
+        - { name: amqp, containerPort: 5672 }
+        - { name: mgmt, containerPort: 15672 }
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: user } }
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: pass } }
+        - { name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS, value: "+S 2:2" }
+        volumeMounts:
+        - { name: conf, mountPath: /etc/rabbitmq/conf.d/20-memory.conf, subPath: 20-memory.conf }
+        resources:
+          requests: { cpu: 100m, memory: 384Mi }
+          limits:   { cpu: "1",  memory: 640Mi }
+        readinessProbe:
+          exec: { command: ["rabbitmq-diagnostics", "-q", "ping"] }
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 10
+      volumes:
+      - name: conf
+        configMap: { name: rabbit-conf }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: rabbitmq, namespace: messaging }
+spec:
+  selector: { app: rabbitmq }
+  ports:
+  - { name: amqp, port: 5672, targetPort: 5672 }
+  - { name: mgmt, port: 15672, targetPort: 15672 }
 EOF
+kubectl apply -f k8s/30-rabbitmq.yaml
+kubectl get pods -n messaging -w
 
-protoc --go_out=. --go_opt=paths=source_relative \
-       --go-grpc_out=. --go-grpc_opt=paths=source_relative proto/war.proto
-ls proto/
-
-✅ Verificación 10: ls proto/ muestra war.proto war.pb.go war_grpc.pb.go. Si alguna versión de los plugins no existe, avísame.
-
-Paso 11: Código de los 3 servicios Go
-
-El net/http de Go ya atiende cada petición en su propia goroutine. En el cliente gRPC agregamos además un semáforo (máximo 256 llamadas en vuelo) para que un pico de Locust no te dispare la RAM. Eso responde a “manejo de concurrencia” de la rúbrica.
-
-11.1 Container 1 del Deployment 1: api (recibe de Rust) (ya lo hice, solo comprueba que este bien)
+✅ Verificación 16: el pod queda 1/1 Running (tarda 30-60 s) y esto responde sin error:
 
 bash
-cat > cmd/api/main.go <<'EOF'
+kubectl exec -n messaging deploy/rabbitmq -- rabbitmqctl list_queues
+Paso 17: Container Writer y gRPC Server actualizado
+
+El Deployment 2 pasa a tener 2 containers, como pide el enunciado: grpc-server recibe por gRPC y le pasa el mensaje por localhost al writer, que publica en RabbitMQ.
+
+17.1 Writer. Usa un pool de 8 canales AMQP. Cada petición, que ya corre en su propia goroutine, toma un canal del pool, publica y lo devuelve. Eso resuelve la concurrencia sin compartir un canal entre hilos, algo que AMQP no permite.
+
+bash
+cd go-services
+mkdir -p cmd/writer cmd/consumer
+cat > cmd/writer/main.go <<'EOF'
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+func getenv(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
+
+func main() {
+	queue := getenv("QUEUE", "war-reports")
+	u := url.URL{
+		Scheme: "amqp",
+		User:   url.UserPassword(getenv("RABBIT_USER", "guest"), getenv("RABBIT_PASS", "guest")),
+		Host:   getenv("RABBIT_HOST", "rabbitmq.messaging.svc.cluster.local:5672"),
+		Path:   "/",
+	}
+
+	var conn *amqp.Connection
+	var err error
+	for i := 0; i < 30; i++ {
+		if conn, err = amqp.Dial(u.String()); err == nil {
+			break
+		}
+		log.Printf("esperando RabbitMQ (%d/30): %v", i+1, err)
+		time.Sleep(2 * time.Second)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Si se pierde la conexión, salimos y Kubernetes reinicia el container
+	go func() { log.Fatalf("conexion RabbitMQ cerrada: %v", <-conn.NotifyClose(make(chan *amqp.Error, 1))) }()
+
+	const poolSize = 8
+	pool := make(chan *amqp.Channel, poolSize)
+	for i := 0; i < poolSize; i++ {
+		ch, err := conn.Channel()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if i == 0 { // cola durable
+			if _, err = ch.QueueDeclare(queue, true, false, false, false, nil); err != nil {
+				log.Fatal(err)
+			}
+		}
+		pool <- ch
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /publish", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+		if err != nil || !json.Valid(body) {
+			http.Error(w, "json invalido", http.StatusBadRequest)
+			return
+		}
+		var ch *amqp.Channel
+		select {
+		case ch = <-pool:
+		case <-r.Context().Done():
+			http.Error(w, "cancelado", http.StatusServiceUnavailable)
+			return
+		}
+		defer func() { pool <- ch }()
+
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		err = ch.PublishWithContext(ctx, "", queue, false, false, amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Body:         body,
+		})
+		if err != nil {
+			log.Printf("error publicando: %v", err)
+			if ch.IsClosed() {
+				log.Fatal("canal cerrado, reiniciando")
+			}
+			http.Error(w, "rabbitmq no disponible", http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	log.Printf("writer -> cola %q, escuchando en 127.0.0.1:8083", queue)
+	log.Fatal(http.ListenAndServe("127.0.0.1:8083", mux))
+}
+EOF
+
+17.2 gRPC Server. Reemplaza el main.go anterior, ahora con la llamada al Writer:
+
+bash
+cat > cmd/grpc-server/main.go <<'EOF'
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	pb "munk8s/proto"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type server struct {
+	pb.UnimplementedWarReportServiceServer
+	n         atomic.Int64
+	hc        *http.Client
+	writerURL string
+}
+
+func (s *server) SendReport(ctx context.Context, r *pb.WarReportRequest) (*pb.WarReportResponse, error) {
+	if n := s.n.Add(1); n%100 == 1 {
+		log.Printf("reporte #%d pais=%s aviones=%d barcos=%d", n, r.Country, r.WarplanesInAir, r.WarshipsInWater)
+	}
+	b, _ := json.Marshal(map[string]any{
+		"country":           strings.ToUpper(r.Country.String()),
+		"warplanes_in_air":  r.WarplanesInAir,
+		"warships_in_water": r.WarshipsInWater,
+		"timestamp":         r.Timestamp,
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.writerURL, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.hc.Do(req)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "writer no disponible")
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, status.Error(codes.Unavailable, "writer rechazo el mensaje")
+	}
+	return &pb.WarReportResponse{Status: "ok"}, nil
+}
+
+func main() {
+	wurl := os.Getenv("WRITER_URL")
+	if wurl == "" {
+		wurl = "http://127.0.0.1:8083/publish"
+	}
+	s := &server{
+		hc: &http.Client{Timeout: 3 * time.Second,
+			Transport: &http.Transport{MaxIdleConnsPerHost: 100}},
+		writerURL: wurl,
+	}
+	lis, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatal(err)
+	}
+	g := grpc.NewServer()
+	pb.RegisterWarReportServiceServer(g, s)
+	log.Println("grpc-server escuchando en :50051")
+	log.Fatal(g.Serve(lis))
+}
+EOF
+
+17.3 Dependencias y compilación:
+
+bash
+go get github.com/rabbitmq/amqp091-go@v1.10.0
+go mod tidy
+go build ./... && echo "COMPILA OK"
+
+17.4 Build y push (los tres con tag v2):
+
+bash
+cd .. && ./scripts/build-go.sh v2 grpc-server writer && ./scripts/cleanup.sh
+
+17.5 Deployment 2 con 2 containers (reemplaza el archivo anterior):
+
+bash
+cat > k8s/21-grpc-server.yaml <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: grpc-server, namespace: apps }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: grpc-server } }
+  template:
+    metadata: { labels: { app: grpc-server } }
+    spec:
+      containers:
+      - name: grpc-server
+        image: zot:5000/munk8s/go-grpc-server:v2
+        ports: [{ containerPort: 50051 }]
+        env:
+        - { name: GOMEMLIMIT, value: "60MiB" }
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 96Mi }
+      - name: writer
+        image: zot:5000/munk8s/go-writer:v2
+        env:
+        - { name: GOMEMLIMIT, value: "60MiB" }
+        - { name: RABBIT_HOST, value: "rabbitmq.messaging.svc.cluster.local:5672" }
+        - name: RABBIT_USER
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: user } }
+        - name: RABBIT_PASS
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: pass } }
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 96Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: grpc-server, namespace: apps }
+spec:
+  clusterIP: None
+  selector: { app: grpc-server }
+  ports: [{ port: 50051, targetPort: 50051 }]
+EOF
+kubectl apply -f k8s/21-grpc-server.yaml
+kubectl get pods -n apps -w
+
+✅ Verificación 17. grpc-server debe quedar 2/2 Running. Luego manda 3 mensajes manuales y mira la cola, que debe mostrar 3 mensajes porque aún no hay consumer:
+
+bash
+for i in 1 2 3; do curl -s -X POST http://localhost:8080/grpc-$CARNET -H 'Content-Type: application/json' \
+  -d '{"country":"GTM","warplanes_in_air":10,"warships_in_water":5,"timestamp":"2026-03-12T20:15:30Z"}'; echo; done
+kubectl exec -n messaging deploy/rabbitmq -- rabbitmqctl list_queues name messages consumers
+
+Debe mostrar war-reports 3 0. Si el pod del Writer reinicia, mira kubectl logs -n apps deploy/grpc-server -c writer.
+
+No corras Locust todavía. Sin consumer, la cola crece y se come la RAM de RabbitMQ. Primero el paso 18.
+
+Paso 18: Consumer en Go (por ahora solo procesa y cuenta)
+
+Cuando exista el Operator de Valkey, solo cambiaremos la función process. Usa ack manual, prefetch de 50 y 4 workers concurrentes.
+
+bash
+cd go-services
+cat > cmd/consumer/main.go <<'EOF'
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/url"
+	"os"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Report struct {
@@ -90,393 +372,133 @@ func getenv(k, d string) string {
 	return d
 }
 
-func main() {
-	clientURL := getenv("CLIENT_URL", "http://127.0.0.1:8082/send")
-	hc := &http.Client{
-		Timeout:   5 * time.Second,
-		Transport: &http.Transport{MaxIdleConnsPerHost: 100},
+var total atomic.Int64
+
+// TODO (con el Operator): escribir en Valkey
+func process(r Report) error {
+	if n := total.Add(1); n%100 == 1 {
+		log.Printf("procesado #%d pais=%s aviones=%d barcos=%d", n, r.Country, r.WarplanesInAir, r.WarshipsInWater)
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("POST /report", func(w http.ResponseWriter, r *http.Request) {
-		var rep Report
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&rep); err != nil {
-			http.Error(w, "json invalido", http.StatusBadRequest)
-			return
-		}
-		if len(rep.Country) != 3 || rep.WarplanesInAir < 0 || rep.WarshipsInWater < 0 {
-			http.Error(w, "datos invalidos", http.StatusBadRequest)
-			return
-		}
-		b, _ := json.Marshal(rep)
-		resp, err := hc.Post(clientURL, "application/json", bytes.NewReader(b))
-		if err != nil {
-			http.Error(w, "grpc-client no disponible", http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-	})
-
-	log.Println("api escuchando en :8081")
-	log.Fatal(http.ListenAndServe(":8081", mux))
-}
-EOF
-
-(De aquí en adelante aun no lo eh hecho)
-11.2 Container 2 del Deployment 1: grpc-client
-
-Escucha solo en 127.0.0.1, porque se comunica con api dentro del mismo pod. Usa round_robin para repartir entre las réplicas del gRPC Server (esto importa para tu comparación de 1 vs 2 réplicas):
-
-bash
-cat > cmd/grpc-client/main.go <<'EOF'
-package main
-
-import (
-	"context"
-	"encoding/json"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"time"
-
-	pb "munk8s/proto"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-)
-
-type in struct {
-	Country         string `json:"country"`
-	WarplanesInAir  int32  `json:"warplanes_in_air"`
-	WarshipsInWater int32  `json:"warships_in_water"`
-	Timestamp       string `json:"timestamp"`
-}
-
-func getenv(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return d
+	return nil
 }
 
 func main() {
-	addr := getenv("GRPC_SERVER_ADDR", "grpc-server:50051")
-	conn, err := grpc.NewClient(addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`))
-	if err != nil {
-		log.Fatalf("grpc: %v", err)
+	queue := getenv("QUEUE", "war-reports")
+	u := url.URL{
+		Scheme: "amqp",
+		User:   url.UserPassword(getenv("RABBIT_USER", "guest"), getenv("RABBIT_PASS", "guest")),
+		Host:   getenv("RABBIT_HOST", "rabbitmq.messaging.svc.cluster.local:5672"),
+		Path:   "/",
 	}
-	defer conn.Close()
-	client := pb.NewWarReportServiceClient(conn)
-
-	sem := make(chan struct{}, 256) // máximo de llamadas gRPC en vuelo
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /send", func(w http.ResponseWriter, r *http.Request) {
-		var m in
-		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
-			http.Error(w, "json invalido", http.StatusBadRequest)
-			return
+	var conn *amqp.Connection
+	var err error
+	for i := 0; i < 30; i++ {
+		if conn, err = amqp.Dial(u.String()); err == nil {
+			break
 		}
-		code, ok := pb.Countries_value[strings.ToLower(m.Country)]
-		if !ok || code == 0 {
-			http.Error(w, "pais no aceptado", http.StatusBadRequest)
-			return
-		}
-		select {
-		case sem <- struct{}{}:
-			defer func() { <-sem }()
-		case <-r.Context().Done():
-			http.Error(w, "cancelado", http.StatusServiceUnavailable)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		resp, err := client.SendReport(ctx, &pb.WarReportRequest{
-			Country:         pb.Countries(code),
-			WarplanesInAir:  m.WarplanesInAir,
-			WarshipsInWater: m.WarshipsInWater,
-			Timestamp:       m.Timestamp,
-		})
-		if err != nil {
-			log.Printf("error gRPC: %v", err)
-			http.Error(w, "grpc-server no disponible", http.StatusBadGateway)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": resp.Status})
-	})
-
-	log.Printf("grpc-client -> %s, escuchando en 127.0.0.1:8082", addr)
-	log.Fatal(http.ListenAndServe("127.0.0.1:8082", mux))
-}
-EOF
-
-11.3 Deployment 2: grpc-server (versión básica por ahora)
-
-bash
-cat > cmd/grpc-server/main.go <<'EOF'
-package main
-
-import (
-	"context"
-	"log"
-	"net"
-	"sync/atomic"
-
-	pb "munk8s/proto"
-
-	"google.golang.org/grpc"
-)
-
-type server struct {
-	pb.UnimplementedWarReportServiceServer
-	n atomic.Int64
-}
-
-func (s *server) SendReport(ctx context.Context, r *pb.WarReportRequest) (*pb.WarReportResponse, error) {
-	// Se loguea 1 de cada 100 para no inundar los logs
-	if n := s.n.Add(1); n%100 == 1 {
-		log.Printf("reporte #%d pais=%s aviones=%d barcos=%d",
-			n, r.Country, r.WarplanesInAir, r.WarshipsInWater)
+		log.Printf("esperando RabbitMQ (%d/30): %v", i+1, err)
+		time.Sleep(2 * time.Second)
 	}
-	// SIGUIENTE BLOQUE: aquí se reenvía al container Writer (RabbitMQ)
-	return &pb.WarReportResponse{Status: "ok"}, nil
-}
-
-func main() {
-	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatal(err)
 	}
-	g := grpc.NewServer()
-	pb.RegisterWarReportServiceServer(g, &server{})
-	log.Println("grpc-server escuchando en :50051")
-	log.Fatal(g.Serve(lis))
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err = ch.QueueDeclare(queue, true, false, false, false, nil); err != nil {
+		log.Fatal(err)
+	}
+	if err = ch.Qos(50, 0, false); err != nil {
+		log.Fatal(err)
+	}
+	msgs, err := ch.Consume(queue, "", false, false, false, false, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for d := range msgs {
+				var r Report
+				if err := json.Unmarshal(d.Body, &r); err != nil {
+					d.Nack(false, false) // mensaje corrupto: se descarta
+					continue
+				}
+				if err := process(r); err != nil {
+					d.Nack(false, true) // reintentar
+					continue
+				}
+				d.Ack(false)
+			}
+		}()
+	}
+	log.Printf("consumer leyendo cola %q con 4 workers", queue)
+	wg.Wait()
+	log.Fatal("canal de consumo cerrado")
 }
 EOF
-
-go get google.golang.org/grpc@v1.67.1
-go mod tidy
 go build ./... && echo "COMPILA OK"
+cd .. && ./scripts/build-go.sh v2 consumer && ./scripts/cleanup.sh
 
-✅ Verificación 11: imprime COMPILA OK.
-
-Paso 12: Dockerfile único, build y push a Zot
-
-Un solo Dockerfile sirve para todos los servicios Go (se elige con SERVICE), así la caché de módulos se comparte y ahorras disco.
-
-bash
-cat > Dockerfile <<'EOF'
-ARG GO_VERSION
-FROM golang:${GO_VERSION}-alpine AS build
-ARG SERVICE
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/${SERVICE}
-
-FROM alpine:3.20
-RUN adduser -D app
-COPY --from=build /out/app /usr/local/bin/app
-USER app
-CMD ["app"]
-EOF
-printf '.git\n' > .dockerignore
-
-cat > ../scripts/build-go.sh <<'EOF'
-#!/usr/bin/env bash
-# uso: ./scripts/build-go.sh <tag> [servicios...]
-set -e
-cd "$(dirname "$0")/../go-services"
-TAG=${1:?uso: build-go.sh <tag> [servicios...]}; shift
-[ $# -eq 0 ] && set -- api grpc-client grpc-server
-GO_VERSION=$(go env GOVERSION | sed 's/^go//')
-for s in "$@"; do
-  docker build --build-arg GO_VERSION=$GO_VERSION --build-arg SERVICE=$s \
-    -t zot:5000/munk8s/go-$s:$TAG .
-  docker push zot:5000/munk8s/go-$s:$TAG
-done
-EOF
-chmod +x ../scripts/build-go.sh
-
-cd .. && ./scripts/build-go.sh v1 && ./scripts/cleanup.sh
-curl -s https://zot:5000/v2/_catalog
-
-✅ Verificación 12: el catálogo muestra munk8s/go-api, munk8s/go-grpc-client, munk8s/go-grpc-server y munk8s/rust-api.
-
-Regla de tags: cada vez que reconstruyas una imagen, sube el tag (v2, v3...) y actualiza el YAML. El nodo k3s cachea por tag y, si reusas v1, seguirá usando la imagen vieja.
-
-Paso 13: Desplegar Go Deployment 1 y gRPC Server
-bash
-cat > k8s/20-go-api.yaml <<'EOF'
+cat > k8s/40-consumer.yaml <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: go-api, namespace: apps }
+metadata: { name: consumer, namespace: apps }
 spec:
   replicas: 1
-  selector: { matchLabels: { app: go-api } }
+  selector: { matchLabels: { app: consumer } }
   template:
-    metadata: { labels: { app: go-api } }
+    metadata: { labels: { app: consumer } }
     spec:
       containers:
-      - name: api
-        image: zot:5000/munk8s/go-api:v1
-        ports: [{ containerPort: 8081 }]
-        env:
-        - { name: GOMEMLIMIT, value: "60MiB" }   # el GC de Go respeta el límite del pod
-        resources:
-          requests: { cpu: 50m, memory: 32Mi }
-          limits:   { cpu: 300m, memory: 96Mi }
-        readinessProbe:
-          httpGet: { path: /health, port: 8081 }
-          initialDelaySeconds: 2
-      - name: grpc-client
-        image: zot:5000/munk8s/go-grpc-client:v1
-        env:
-        - { name: GRPC_SERVER_ADDR, value: "grpc-server:50051" }
-        - { name: GOMEMLIMIT, value: "60MiB" }
-        resources:
-          requests: { cpu: 50m, memory: 32Mi }
-          limits:   { cpu: 300m, memory: 96Mi }
----
-apiVersion: v1
-kind: Service
-metadata: { name: go-api, namespace: apps }
-spec:
-  selector: { app: go-api }
-  ports: [{ port: 8081, targetPort: 8081 }]
-EOF
-
-cat > k8s/21-grpc-server.yaml <<'EOF'
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: grpc-server, namespace: apps }
-spec:
-  replicas: 1
-  selector: { matchLabels: { app: grpc-server } }
-  template:
-    metadata: { labels: { app: grpc-server } }
-    spec:
-      containers:
-      - name: grpc-server
-        image: zot:5000/munk8s/go-grpc-server:v1
-        ports: [{ containerPort: 50051 }]
+      - name: consumer
+        image: zot:5000/munk8s/go-consumer:v2
         env:
         - { name: GOMEMLIMIT, value: "60MiB" }
+        - { name: RABBIT_HOST, value: "rabbitmq.messaging.svc.cluster.local:5672" }
+        - name: RABBIT_USER
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: user } }
+        - name: RABBIT_PASS
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: pass } }
         resources:
           requests: { cpu: 50m, memory: 32Mi }
           limits:   { cpu: 300m, memory: 96Mi }
----
-# Headless: el DNS devuelve la IP de cada réplica, así gRPC reparte la carga (round_robin)
-apiVersion: v1
-kind: Service
-metadata: { name: grpc-server, namespace: apps }
-spec:
-  clusterIP: None
-  selector: { app: grpc-server }
-  ports: [{ port: 50051, targetPort: 50051 }]
 EOF
+kubectl apply -f k8s/40-consumer.yaml
+kubectl logs -n apps deploy/consumer --tail=5
 
-kubectl apply -f k8s/20-go-api.yaml -f k8s/21-grpc-server.yaml
-kubectl get pods -n apps -w
+✅ Verificación 18:
 
-✅ Verificación 13: go-api muestra 2/2 Running (los dos containers), y grpc-server y rust-api están 1/1 Running.
-
-Si alguno falla, mándame la salida de kubectl describe pod <pod> -n apps | tail -20 y kubectl logs <pod> -n apps --all-containers.
-
-Paso 14: Locust
+kubectl logs -n apps deploy/consumer muestra “consumer leyendo cola”.
+La cola se vació: kubectl exec -n messaging deploy/rabbitmq -- rabbitmqctl list_queues name messages consumers → war-reports 0 1.
+Ahora sí, carga ligera con Locust:
 bash
-cat > locust/locustfile.py <<'EOF'
-import os
-import random
-from datetime import datetime, timezone
-
-from locust import HttpUser, task, between
-
-CARNET = os.environ["CARNET"]
-COUNTRIES = ["USA", "RUS", "CHN", "ESP", "GTM"]
-
-
-class ReportUser(HttpUser):
-    wait_time = between(0.01, 0.1)
-
-    @task
-    def send_report(self):
-        payload = {
-            "country": random.choice(COUNTRIES),
-            "warplanes_in_air": random.randint(0, 50),
-            "warships_in_water": random.randint(0, 30),
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        }
-        self.client.post(f"/grpc-{CARNET}", json=payload)
-EOF
-Paso 15: Prueba del pipeline completo
-
-15.1 Una petición manual:
-
-bash
-curl -i -X POST http://localhost:8080/grpc-$CARNET \
-  -H 'Content-Type: application/json' \
-  -d '{"country":"ESP","warplanes_in_air":42,"warships_in_water":14,"timestamp":"2026-03-12T20:15:30Z"}'
-
-Debe responder HTTP/1.1 200 OK con {"status":"ok"}. El 502 de antes ya no debería aparecer.
-
-15.2 Prueba negativa (valida que el enum rechaza países fuera de la lista):
-
-bash
-curl -i -X POST http://localhost:8080/grpc-$CARNET -H 'Content-Type: application/json' \
-  -d '{"country":"FRA","warplanes_in_air":1,"warships_in_water":1,"timestamp":"2026-03-12T20:15:30Z"}'
-
-Debe dar 400.
-
-15.3 Locust, carga ligera de 30 segundos:
-
-bash
-CARNET=$CARNET locust -f locust/locustfile.py --host http://localhost:8080 \
-  --headless -u 10 -r 5 -t 30s
-
-15.4 Revisa recursos y logs:
-
-bash
-kubectl logs -n apps deploy/grpc-server --tail=5
-kubectl top pods -n apps
+CARNET=$CARNET locust -f locust/locustfile.py --host http://localhost:8080 --headless -u 20 -r 10 -t 30s
+kubectl exec -n messaging deploy/rabbitmq -- rabbitmqctl list_queues name messages consumers
+kubectl top pods -A
 free -h
 
-✅ Verificación 15:
+Locust debe terminar con 0 fallos y la cola debe quedar en 0 o cerca de 0.
 
-15.1 da 200 y 15.2 da 400.
-Locust termina con 0 fallos (Fails en 0).
-kubectl logs de grpc-server muestra líneas reporte #....
-kubectl top pods muestra cada pod muy por debajo de sus límites.
-Cumplimiento del enunciado hasta aquí
+Cumplimiento del enunciado
 Requisito	Estado
-Locust con el JSON especificado y rangos 0-50 / 0-30	✅ Paso 14
-Gateway API con /grpc-#carnet	✅
-Rust recibe de Locust y envía a Go	✅
-Go Deployment 1: 2 containers (API REST + gRPC Client)	✅
-gRPC con el .proto propuesto y manejo de concurrencia	✅
-gRPC Server (Deployment 2)	🔄 Recibe, aún sin Writer
-Imágenes publicadas y consumidas desde Zot	✅
-requests y limits en todos los deployments	✅
-Lo que sigue (hoy, si te alcanza el ánimo)
-RabbitMQ en el namespace messaging, con límite de 512 MB y una cola durable.
-Container Writer en el Deployment 2 (el gRPC Server le pasa el mensaje por localhost y el Writer publica en RabbitMQ con goroutines).
-Consumer en Go, primero imprimiendo los mensajes. Se conecta a Valkey cuando exista el Operator mañana.
+RabbitMQ como broker principal, imagen desde Zot	✅ Paso 16
+Deployment 2: gRPC Server + Writer (2 containers)	✅ Paso 17
+Writer publica en RabbitMQ con concurrencia	✅ pool de canales
+Consumer lee la cola y procesa	✅ Paso 18 (falta guardar en Valkey)
+Valkey con Operator, Grafana con Operator	⏳ Mañana 21
+HPA de Rust, pruebas 1 vs 2 réplicas, OCI Artifact	⏳ Después del Operator
+Para el siguiente mensaje
 
-Pégame la salida de:
+Pégame:
 
 bash
-kubectl get pods -n apps
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/grpc-$CARNET -H 'Content-Type: application/json' -d '{"country":"ESP","warplanes_in_air":42,"warships_in_water":14,"timestamp":"2026-03-12T20:15:30Z"}'
+kubectl get pods -A
+kubectl exec -n messaging deploy/rabbitmq -- rabbitmqctl list_queues name messages consumers
+free -h
 
-y de las últimas líneas del resumen de Locust (Fails y Median).
+y las últimas líneas de Locust (Fails, Median, req/s). Con eso empezamos el Operator de Valkey, que es lo que más puntos da. Si hoy te sobra energía, ya puedes ir leyendo la guía de Operator SDK para Helm que cita el enunciado.

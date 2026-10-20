@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: rabbit-conf, namespace: messaging }
+data:
+  20-memory.conf: |
+    vm_memory_high_watermark.absolute = 400MiB
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: rabbitmq, namespace: messaging }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: rabbitmq } }
+  template:
+    metadata: { labels: { app: rabbitmq } }
+    spec:
+      containers:
+      - name: rabbitmq
+        image: zot:5000/munk8s/rabbitmq:3.13
+        ports:
+        - { name: amqp, containerPort: 5672 }
+        - { name: mgmt, containerPort: 15672 }
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: user } }
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: pass } }
+        - { name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS, value: "+S 2:2" }
+        volumeMounts:
+        - { name: conf, mountPath: /etc/rabbitmq/conf.d/20-memory.conf, subPath: 20-memory.conf }
+        resources:
+          requests: { cpu: 100m, memory: 384Mi }
+          limits:   { cpu: "1",  memory: 640Mi }
+        readinessProbe:
+          exec: { command: ["rabbitmq-diagnostics", "-q", "ping"] }
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 10
+      volumes:
+      - name: conf
+        configMap: { name: rabbit-conf }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: rabbitmq, namespace: messaging }
+spec:
+  selector: { app: rabbitmq }
+  ports:
+  - { name: amqp, port: 5672, targetPort: 5672 }
+  - { name: mgmt, port: 15672, targetPort: 15672 }

@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: consumer, namespace: apps }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: consumer } }
+  template:
+    metadata: { labels: { app: consumer } }
+    spec:
+      containers:
+      - name: consumer
+        image: zot:5000/munk8s/go-consumer:v2
+        env:
+        - { name: GOMEMLIMIT, value: "60MiB" }
+        - { name: RABBIT_HOST, value: "rabbitmq.messaging.svc.cluster.local:5672" }
+        - name: RABBIT_USER
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: user } }
+        - name: RABBIT_PASS
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: pass } }
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 96Mi }

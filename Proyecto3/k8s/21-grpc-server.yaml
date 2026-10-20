@@ -9,15 +9,26 @@ spec:
     spec:
       containers:
       - name: grpc-server
-        image: zot:5000/munk8s/go-grpc-server:v1
+        image: zot:5000/munk8s/go-grpc-server:v2
         ports: [{ containerPort: 50051 }]
         env:
         - { name: GOMEMLIMIT, value: "60MiB" }
         resources:
           requests: { cpu: 50m, memory: 32Mi }
           limits:   { cpu: 300m, memory: 96Mi }
+      - name: writer
+        image: zot:5000/munk8s/go-writer:v2
+        env:
+        - { name: GOMEMLIMIT, value: "60MiB" }
+        - { name: RABBIT_HOST, value: "rabbitmq.messaging.svc.cluster.local:5672" }
+        - name: RABBIT_USER
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: user } }
+        - name: RABBIT_PASS
+          valueFrom: { secretKeyRef: { name: rabbit-cred, key: pass } }
+        resources:
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 96Mi }
 ---
-# Headless: el DNS devuelve la IP de cada réplica, así gRPC reparte la carga (round_robin)
 apiVersion: v1
 kind: Service
 metadata: { name: grpc-server, namespace: apps }
