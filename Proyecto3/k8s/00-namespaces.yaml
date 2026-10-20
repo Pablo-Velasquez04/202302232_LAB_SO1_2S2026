@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Namespace
+metadata: { name: apps }
+---
+apiVersion: v1
+kind: Namespace
+metadata: { name: messaging }
+---
+apiVersion: v1
+kind: Namespace
+metadata: { name: data }
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: quota, namespace: apps }
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 1Gi
+    limits.cpu: "4"
+    limits.memory: 2Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: quota, namespace: messaging }
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 768Mi
+    limits.cpu: "2"
+    limits.memory: 1Gi
+    pods: "10"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: quota, namespace: data }
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 1536Mi
+    pods: "10"
+---
+# Si algún pod no declara recursos, recibe estos valores por defecto
+apiVersion: v1
+kind: LimitRange
+metadata: { name: defaults, namespace: apps }
+spec:
+  limits:
+  - type: Container
+    default: { cpu: 300m, memory: 192Mi }
+    defaultRequest: { cpu: 50m, memory: 64Mi }

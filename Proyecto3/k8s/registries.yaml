@@ -1,0 +1,8 @@
+mirrors:
+  "zot:5000":
+    endpoint:
+      - https://zot:5000
+configs:
+  "zot:5000":
+    tls:
+      ca_file: /etc/ssl/certs/zot-ca.crt
