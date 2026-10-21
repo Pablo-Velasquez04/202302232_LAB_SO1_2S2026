@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
       - name: consumer
-        image: zot:5000/munk8s/go-consumer:v3
+        image: zot:5000/munk8s/go-consumer:v4
         env:
         - { name: GOMEMLIMIT, value: "60MiB" }
         - { name: RABBIT_HOST, value: "rabbitmq.messaging.svc.cluster.local:5672" }

@@ -1,0 +1,7 @@
+{
+  "countries": ["USA", "RUS", "CHN", "ESP", "GTM"],
+  "ranges": {
+    "warplanes_in_air": [0, 50],
+    "warships_in_water": [0, 30]
+  }
+}

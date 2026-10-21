@@ -49,6 +49,9 @@ redis.call('HSET', KEYS[1], 'mode_planes', redis.call('ZREVRANGE', KEYS[2], 0, 0
 redis.call('HSET', KEYS[1], 'mode_ships', redis.call('ZREVRANGE', KEYS[3], 0, 0)[1])
 redis.call('ZINCRBY', KEYS[4], p, c)
 redis.call('ZINCRBY', KEYS[5], s, c)
+-- Hashes paralelos para Grafana: HGET top:planes:hash <country>
+redis.call('HINCRBYFLOAT', KEYS[8], c, p)
+redis.call('HINCRBYFLOAT', KEYS[9], c, s)
 redis.call('HINCRBY', KEYS[6], c, 1)
 redis.call('XADD', KEYS[7], 'MAXLEN', '~', 5000, '*', 'planes', p, 'ships', s, 'ts', ARGV[4])
 redis.call('EXPIRE', KEYS[7], 86400)
@@ -65,7 +68,7 @@ func process(r Report) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	err := script.Run(ctx, rdb,
-		[]string{"stats", "freq:planes", "freq:ships", "top:planes", "top:ships", "reports:count", "series:" + r.Country},
+		[]string{"stats", "freq:planes", "freq:ships", "top:planes", "top:ships", "reports:count", "series:" + r.Country, "top:planes:hash", "top:ships:hash"},
 		r.WarplanesInAir, r.WarshipsInWater, r.Country, r.Timestamp).Err()
 	if err != nil {
 		log.Printf("valkey: %v", err)

@@ -5,6 +5,7 @@
   "schemaVersion": 39,
   "tags": ["mumnk8s"],
   "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
   "panels": [
     {
       "id": 1,
@@ -14,11 +15,12 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "HGET stats max_planes",
         "type": "command"
       }],
-      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" },
-      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 30 }, { "color": "red", "value": 45 }] } } }
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 30 }, { "color": "red", "value": 45 }] } } }
     },
     {
       "id": 2,
@@ -28,11 +30,12 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "HGET stats min_planes",
         "type": "command"
       }],
-      "options": { "colorMode": "background", "graphMode": "none" },
-      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } } }
     },
     {
       "id": 3,
@@ -42,11 +45,12 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "HGET stats max_ships",
         "type": "command"
       }],
-      "options": { "colorMode": "background", "graphMode": "none" },
-      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 20 }, { "color": "red", "value": 27 }] } } }
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 20 }, { "color": "red", "value": 27 }] } } }
     },
     {
       "id": 4,
@@ -56,11 +60,12 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "HGET stats min_ships",
         "type": "command"
       }],
-      "options": { "colorMode": "background", "graphMode": "none" },
-      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } } }
     },
     {
       "id": 5,
@@ -70,10 +75,11 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "HGET stats mode_planes",
         "type": "command"
       }],
-      "options": { "colorMode": "value", "graphMode": "none" }
+      "options": { "colorMode": "value", "graphMode": "none", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
       "id": 6,
@@ -83,37 +89,35 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "HGET stats mode_ships",
         "type": "command"
       }],
-      "options": { "colorMode": "value", "graphMode": "none" }
+      "options": { "colorMode": "value", "graphMode": "none", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
       "id": 7,
       "title": "País Asignado",
-      "type": "stat",
+      "type": "text",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
-      "datasource": { "type": "redis-datasource", "uid": "valkey" },
-      "targets": [{
-        "refId": "A",
-        "query": "HGET reports:count RUS",
-        "type": "command"
-      }],
-      "options": { "colorMode": "background", "graphMode": "none", "textMode": "name" },
-      "title": "País Asignado: RUS"
+      "datasource": { "type": "datasource", "uid": "-- Dashboard --" },
+      "targets": [],
+      "options": { "mode": "markdown", "content": "# 🇷🇺 RUS\n### Russia\n*País asignado (carnet termina en 2)*" },
+      "transparent": false
     },
     {
       "id": 8,
-      "title": "Total Reportes RUS",
+      "title": "Total Reportes Recibidos de RUS",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "HGET reports:count RUS",
         "type": "command"
       }],
-      "options": { "colorMode": "background", "graphMode": "area" },
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "purple" } } }
     },
     {
@@ -124,11 +128,15 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
-        "query": "ZREVRANGE top:planes 0 4 WITHSCORES",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
+        "query": "HGETALL top:planes:hash",
         "type": "command"
       }],
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "valueMode": "color" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } }
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] }, "showUnfilled": true },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } } },
+      "transformations": [
+        { "id": "convertFieldTypes", "options": { "conversions": [{ "targetField": "Value", "destinationType": "number" }] } }
+      ]
     },
     {
       "id": 10,
@@ -138,32 +146,62 @@
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
-        "query": "ZREVRANGE top:ships 0 4 WITHSCORES",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
+        "query": "HGETALL top:ships:hash",
         "type": "command"
       }],
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "valueMode": "color" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } }
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] }, "showUnfilled": true },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } } },
+      "transformations": [
+        { "id": "convertFieldTypes", "options": { "conversions": [{ "targetField": "Value", "destinationType": "number" }] } }
+      ]
     },
     {
       "id": 11,
-      "title": "Serie Temporal RUS - Aviones y Barcos",
+      "title": "Serie Temporal RUS - Aviones y Barcos en Mar",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
       "targets": [{
         "refId": "A",
+        "datasource": { "type": "redis-datasource", "uid": "valkey" },
         "query": "XRANGE series:RUS - + COUNT 500",
         "type": "command",
         "streaming": false
       }],
-      "options": { "tooltip": { "mode": "multi" } },
+      "options": { "tooltip": { "mode": "multi", "sort": "none" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": {
-        "defaults": { "custom": { "lineWidth": 2 } },
+        "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 10 } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "planes" }, "properties": [{ "id": "displayName", "value": "Aviones RUS" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
-          { "matcher": { "id": "byName", "options": "ships" }, "properties": [{ "id": "displayName", "value": "Barcos RUS" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] }
+          {
+            "matcher": { "id": "byName", "options": "planes" },
+            "properties": [
+              { "id": "displayName", "value": "Aviones RUS" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.lineWidth", "value": 2 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "ships" },
+            "properties": [
+              { "id": "displayName", "value": "Barcos RUS" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } },
+              { "id": "custom.lineWidth", "value": 2 }
+            ]
+          }
         ]
-      }
+      },
+      "transformations": [
+        {
+          "id": "convertFieldTypes",
+          "options": {
+            "conversions": [
+              { "targetField": "planes", "destinationType": "number" },
+              { "targetField": "ships", "destinationType": "number" }
+            ]
+          }
+        }
+      ]
     }
   ]
 }
