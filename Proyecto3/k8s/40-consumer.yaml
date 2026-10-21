@@ -9,10 +9,11 @@ spec:
     spec:
       containers:
       - name: consumer
-        image: zot:5000/munk8s/go-consumer:v2
+        image: zot:5000/munk8s/go-consumer:v3
         env:
         - { name: GOMEMLIMIT, value: "60MiB" }
         - { name: RABBIT_HOST, value: "rabbitmq.messaging.svc.cluster.local:5672" }
+        - { name: VALKEY_ADDR, value: "valkey.data.svc.cluster.local:6379" }
         - name: RABBIT_USER
           valueFrom: { secretKeyRef: { name: rabbit-cred, key: user } }
         - name: RABBIT_PASS

@@ -1,0 +1,9 @@
+apiVersion: cache.munk8s.io/v1alpha1
+kind: ValkeyInstance
+metadata:
+  name: valkey
+  namespace: data
+spec:
+  maxmemory: 100mb
+  persistence:
+    size: 1Gi
