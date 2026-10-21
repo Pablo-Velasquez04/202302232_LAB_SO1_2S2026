@@ -72,11 +72,11 @@
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
       "datasource": { "type": "datasource", "uid": "-- Dashboard --" },
       "targets": [],
-      "options": { "mode": "markdown", "content": "# 🇷🇺 RUS\n### Russia\n*País asignado (carnet termina en 2)*" }
+      "options": { "mode": "markdown", "content": "# 🇷🇺 RUS\n### Russia\n*País asignado (carnet 202302232)*" }
     },
     {
       "id": 8,
-      "title": "Total Reportes Recibidos de RUS",
+      "title": "Total Reportes de RUS",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
@@ -101,11 +101,11 @@
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "USA" }, "properties": [{ "id": "displayName", "value": "USA" }] },
-          { "matcher": { "id": "byName", "options": "RUS" }, "properties": [{ "id": "displayName", "value": "RUS" }] },
-          { "matcher": { "id": "byName", "options": "CHN" }, "properties": [{ "id": "displayName", "value": "CHN" }] },
-          { "matcher": { "id": "byName", "options": "ESP" }, "properties": [{ "id": "displayName", "value": "ESP" }] },
-          { "matcher": { "id": "byName", "options": "GTM" }, "properties": [{ "id": "displayName", "value": "GTM" }] }
+          { "matcher": { "id": "byFrameRefID", "options": "USA" }, "properties": [{ "id": "displayName", "value": "USA" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "RUS" }, "properties": [{ "id": "displayName", "value": "RUS" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "CHN" }, "properties": [{ "id": "displayName", "value": "CHN" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "ESP" }, "properties": [{ "id": "displayName", "value": "ESP" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "GTM" }, "properties": [{ "id": "displayName", "value": "GTM" }] }
         ]
       }
     },
@@ -126,17 +126,17 @@
       "fieldConfig": {
         "defaults": { "color": { "mode": "palette-classic" } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "USA" }, "properties": [{ "id": "displayName", "value": "USA" }] },
-          { "matcher": { "id": "byName", "options": "RUS" }, "properties": [{ "id": "displayName", "value": "RUS" }] },
-          { "matcher": { "id": "byName", "options": "CHN" }, "properties": [{ "id": "displayName", "value": "CHN" }] },
-          { "matcher": { "id": "byName", "options": "ESP" }, "properties": [{ "id": "displayName", "value": "ESP" }] },
-          { "matcher": { "id": "byName", "options": "GTM" }, "properties": [{ "id": "displayName", "value": "GTM" }] }
+          { "matcher": { "id": "byFrameRefID", "options": "USA" }, "properties": [{ "id": "displayName", "value": "USA" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "RUS" }, "properties": [{ "id": "displayName", "value": "RUS" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "CHN" }, "properties": [{ "id": "displayName", "value": "CHN" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "ESP" }, "properties": [{ "id": "displayName", "value": "ESP" }] },
+          { "matcher": { "id": "byFrameRefID", "options": "GTM" }, "properties": [{ "id": "displayName", "value": "GTM" }] }
         ]
       }
     },
     {
       "id": 11,
-      "title": "Serie Temporal RUS - Aviones y Barcos en Mar",
+      "title": "Serie Temporal RUS – Aviones y Barcos en Mar",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
       "datasource": { "type": "redis-datasource", "uid": "valkey" },
@@ -144,47 +144,38 @@
         {
           "refId": "Aviones RUS",
           "datasource": { "type": "redis-datasource", "uid": "valkey" },
-          "query": "HGET top:planes:hash RUS",
+          "query": "GET serie:RUS:planes",
           "type": "command"
         },
         {
           "refId": "Barcos RUS",
           "datasource": { "type": "redis-datasource", "uid": "valkey" },
-          "query": "HGET top:ships:hash RUS",
-          "type": "command"
-        },
-        {
-          "refId": "Aviones USA",
-          "datasource": { "type": "redis-datasource", "uid": "valkey" },
-          "query": "HGET top:planes:hash USA",
-          "type": "command"
-        },
-        {
-          "refId": "Aviones CHN",
-          "datasource": { "type": "redis-datasource", "uid": "valkey" },
-          "query": "HGET top:planes:hash CHN",
-          "type": "command"
-        },
-        {
-          "refId": "Aviones ESP",
-          "datasource": { "type": "redis-datasource", "uid": "valkey" },
-          "query": "HGET top:planes:hash ESP",
-          "type": "command"
-        },
-        {
-          "refId": "Aviones GTM",
-          "datasource": { "type": "redis-datasource", "uid": "valkey" },
-          "query": "HGET top:planes:hash GTM",
+          "query": "GET serie:RUS:ships",
           "type": "command"
         }
       ],
-      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
-      "description": "Acumulado de aviones y barcos reportados para RUS vs otros países (se actualiza con cada refresh)",
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "description": "Acumulado de aviones y barcos de RUS. Sube con cada reporte recibido (refresh 5s).",
       "fieldConfig": {
-        "defaults": { "custom": { "lineWidth": 2 } },
+        "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 8 } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "Aviones RUS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
-          { "matcher": { "id": "byName", "options": "Barcos RUS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] }
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Aviones RUS" },
+            "properties": [
+              { "id": "displayName", "value": "Aviones en Aire – RUS" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Barcos RUS" },
+            "properties": [
+              { "id": "displayName", "value": "Barcos en Mar – RUS" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          }
         ]
       }
     }
