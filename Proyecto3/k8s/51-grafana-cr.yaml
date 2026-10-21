@@ -1,0 +1,9 @@
+apiVersion: observability.munk8s.io/v1alpha1
+kind: GrafanaInstance
+metadata:
+  name: grafana
+  namespace: data
+spec:
+  adminPassword: "munk8s-admin"
+  datasource:
+    valkeyAddress: "valkey.data.svc.cluster.local:6379"

@@ -1,0 +1,10 @@
+image:
+  repository: zot:5000/munk8s/grafana
+  tag: "11.2.0-redis"
+  pullPolicy: IfNotPresent
+adminPassword: "munk8s-admin"
+datasource:
+  valkeyAddress: "valkey.data.svc.cluster.local:6379"
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits:   { cpu: 500m, memory: 384Mi }

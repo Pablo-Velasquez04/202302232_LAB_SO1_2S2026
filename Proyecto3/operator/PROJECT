@@ -5,6 +5,7 @@
 domain: munk8s.io
 layout:
 - helm.sdk.operatorframework.io/v1
+multigroup: true
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
@@ -16,5 +17,12 @@ resources:
   domain: munk8s.io
   group: cache
   kind: ValkeyInstance
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: munk8s.io
+  group: observability
+  kind: GrafanaInstance
   version: v1alpha1
 version: "3"

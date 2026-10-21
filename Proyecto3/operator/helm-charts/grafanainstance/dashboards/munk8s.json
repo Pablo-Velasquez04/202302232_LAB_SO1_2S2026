@@ -1,0 +1,169 @@
+{
+  "title": "M.U.M.N.K8s MONITORING DASHBOARD",
+  "uid": "mumnk8s-main",
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["mumnk8s"],
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Máx. Aviones en Aire (Global)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET stats max_planes",
+        "type": "command"
+      }],
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 30 }, { "color": "red", "value": 45 }] } } }
+    },
+    {
+      "id": 2,
+      "title": "Mín. Aviones en Aire (Global)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET stats min_planes",
+        "type": "command"
+      }],
+      "options": { "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "id": 3,
+      "title": "Máx. Barcos en Mar (Global)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET stats max_ships",
+        "type": "command"
+      }],
+      "options": { "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 20 }, { "color": "red", "value": 27 }] } } }
+    },
+    {
+      "id": 4,
+      "title": "Mín. Barcos en Mar (Global)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET stats min_ships",
+        "type": "command"
+      }],
+      "options": { "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "id": 5,
+      "title": "Moda Aviones en Aire",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET stats mode_planes",
+        "type": "command"
+      }],
+      "options": { "colorMode": "value", "graphMode": "none" }
+    },
+    {
+      "id": 6,
+      "title": "Moda Barcos en Mar",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET stats mode_ships",
+        "type": "command"
+      }],
+      "options": { "colorMode": "value", "graphMode": "none" }
+    },
+    {
+      "id": 7,
+      "title": "País Asignado",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET reports:count RUS",
+        "type": "command"
+      }],
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "name" },
+      "title": "País Asignado: RUS"
+    },
+    {
+      "id": 8,
+      "title": "Total Reportes RUS",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "HGET reports:count RUS",
+        "type": "command"
+      }],
+      "options": { "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "purple" } } }
+    },
+    {
+      "id": 9,
+      "title": "Top Países - Aviones en Aire",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "ZREVRANGE top:planes 0 4 WITHSCORES",
+        "type": "command"
+      }],
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "valueMode": "color" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 10,
+      "title": "Top Países - Barcos en Mar",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "ZREVRANGE top:ships 0 4 WITHSCORES",
+        "type": "command"
+      }],
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "valueMode": "color" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 11,
+      "title": "Serie Temporal RUS - Aviones y Barcos",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "redis-datasource", "uid": "valkey" },
+      "targets": [{
+        "refId": "A",
+        "query": "XRANGE series:RUS - + COUNT 500",
+        "type": "command",
+        "streaming": false
+      }],
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "planes" }, "properties": [{ "id": "displayName", "value": "Aviones RUS" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "ships" }, "properties": [{ "id": "displayName", "value": "Barcos RUS" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] }
+        ]
+      }
+    }
+  ]
+}

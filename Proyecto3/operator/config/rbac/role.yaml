@@ -59,4 +59,35 @@ rules:
   resources:
   - "deployments"
 
+##
+## Rules for observability.munk8s.io/v1alpha1, Kind: GrafanaInstance
+##
+- apiGroups:
+  - observability.munk8s.io
+  resources:
+  - grafanainstances
+  - grafanainstances/status
+  - grafanainstances/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- verbs:
+  - "*"
+  apiGroups:
+  - ""
+  resources:
+  - "serviceaccounts"
+  - "services"
+- verbs:
+  - "*"
+  apiGroups:
+  - "apps"
+  resources:
+  - "deployments"
+
 # +kubebuilder:scaffold:rules

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-provisioning
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Valkey
+      uid: valkey
+      type: redis-datasource
+      access: proxy
+      url: {{ .Values.datasource.valkeyAddress }}
+      isDefault: true
+      jsonData:
+        client: standalone
+        poolSize: 5
+        timeout: 10
+        pingInterval: 0
+        pipelineWindow: 0
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+    - name: munk8s
+      folder: M.U.M.N.K8s
+      type: file
+      allowUiUpdates: true
+      options:
+        path: /var/lib/grafana/dashboards

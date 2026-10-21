@@ -24,6 +24,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the munk8s-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- observability_grafanainstance_admin_role.yaml
+- observability_grafanainstance_editor_role.yaml
+- observability_grafanainstance_viewer_role.yaml
 - valkeyinstance_admin_role.yaml
 - valkeyinstance_editor_role.yaml
 - valkeyinstance_viewer_role.yaml
