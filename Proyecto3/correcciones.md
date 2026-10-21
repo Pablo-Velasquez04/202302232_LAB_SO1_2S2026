@@ -1,68 +1,61 @@
-Esto es lo que dice la otra IA que esta construyendo el proyecto:
+Revisión del dashboard: 9 de 11 paneles correctos y los dos Top siguen mal
 
-Revisión del dashboard: 7 paneles correctos, 2 con problemas y 1 roto
-
-Ahora está mucho mejor, pero no lo des por terminado. Tres paneles siguen mal, y uno de ellos es la serie temporal, que el enunciado pide explícitamente.
+Hay un gran avance: la serie temporal ya funciona. Pero tu resumen dice que los Top muestran nombres y van ordenados, y tu captura no lo confirma.
 
 Panel por panel
-Panel	Valor	¿Correcto?	¿Debe cambiar?
-Máx. aviones / barcos	50 / 30	✅ Coincide con los rangos de Locust	No. Ya llegó al tope y solo cambiaría si salieran valores mayores
-Mín. aviones / barcos	0 / 0	✅	No, por lo mismo
-Moda aviones / barcos	18 / 17	✅ Plausible	Sí, pero poco. Los valores son aleatorios uniformes (0-50), así que la moda es casi un empate permanente y puede saltar entre valores cercanos
-País asignado	RUS	✅ Tu carnet termina en 2	No, es fijo
-Total reportes RUS	47474	✅ en principio	Sí, sube mientras Locust corre
-Top países: aviones	5 barras	⚠️ Ver abajo	Sí, sube con el tráfico
-Top países: barcos	5 barras	⚠️ Ver abajo	Sí
-Serie temporal RUS	“Data is missing a number field”	❌	Sí, es el único que debe moverse constantemente
+Panel	Valor	Veredicto
+Máx. aviones / barcos	50 / 30	✅ Coincide con los rangos
+Mín. aviones / barcos	0 / 0	✅
+Moda aviones / barcos	18 / 17	✅ Plausible, y puede quedarse estable con muchos datos
+País asignado	RUS, carnet 202302232	✅
+Total reportes RUS	54415	✅ Subió desde 47474, así que se está actualizando
+Top aviones	5 barras	❌ Cada barra dice “Value” y no van ordenadas
+Top barcos	5 barras	❌ Mismo problema
+Serie temporal RUS	Dos líneas con leyenda	✅ Funciona, con una duda menor
+Los números de los Top ahora sí cuadran
 
-Regla general: sin Locust corriendo, casi nada cambia. Los contadores solo avanzan cuando entran reportes.
+Antes te dije que no cuadraban. Ahora, con 54 415 reportes de RUS:
 
-Problemas en los Top (los dos paneles de barras)
-No muestran el nombre del país. Cada barra dice “Value”. El enunciado pide un top por país, y su ejemplo es “1. USA 850”. Ahora mismo nadie puede saber qué barra es qué país.
-No están ordenados. Los valores van 1008028, 1008161, 1008314, 1001452, 1013738. Un top debe ir de mayor a menor.
-Los números no cuadran con el total de RUS. Cada reporte trae en promedio 25 aviones y 15 barcos. Con 47 474 reportes de RUS, su acumulado debería rondar 1.19 M de aviones y 712 k de barcos. Ninguna barra se acerca a esos valores (el máximo es 1.01 M y 612 k), y todas apuntan a unos 40 k reportes por país. Puede tener explicación inocente, por ejemplo que las claves se reiniciaron en momentos distintos. Pero hay otra sospecha: en mi diseño top:planes es un zset, y la otra IA dice que usa HGET, que es un comando de hash. Verifícalo:
+54 415 × 25 (promedio de aviones) ≈ 1.36 M. Las barras van de 1.347 M a 1.359 M.
+54 415 × 15 (promedio de barcos) ≈ 816 k. Las barras van de 806 k a 820 k.
+
+Los datos son correctos y la sospecha anterior quedó descartada. Falla solo la presentación.
+
+Por qué los Top siguen mal
+Sin nombre de país. Cada barra dice “Value”, y el enunciado pide un top por país (su ejemplo es “1. USA 850”). Sin etiqueta, nadie sabe qué barra es qué país.
+Sin ordenar. Van 1350118, 1359374, 1356999, 1347623, 1357245. Un top debe ir de mayor a menor.
+Cada barra tiene un color distinto, y eso delata que Grafana las trata como 5 series separadas. Las transformaciones seriesToRows + sortBy que describes deberían fusionarlas en una sola tabla con una columna de país, y eso no se ve en la captura.
+
+Posibles causas, en orden de probabilidad:
+
+La captura es del dashboard anterior y el v8 aún no se cargó. Haz kubectl rollout restart deploy/grafana -n data, espera a que quede 1/1, y recarga con Ctrl+Shift+R.
+Las transformaciones no están surtiendo efecto, porque no se fusionan las 5 queries. Abre el panel → Table view y comprueba si ves una sola tabla con columnas de país y valor, o 5 tablas separadas.
+
+Si siguen separadas, arreglo directo: como son 5 queries (A a E), usa Overrides → Fields returned by query → A → Display name = RUS (y así B, C, D, E con su país). Eso pone el nombre sin depender de transformaciones. Para ordenarlas, el bar gauge no ordena entre series distintas, así que lo limpio es una sola tabla fusionada (Transform → Merge, luego Sort by). Si no lo logras en 20 min, avísame y lo resolvemos cambiando el consumer para guardar los acumulados en un hash. Eso da una sola query HGETALL que ya devuelve país y valor en una sola tabla.
+
+La serie temporal: funciona, con dos observaciones
+El panel ya dibuja planes y ships de RUS, con leyenda correcta (“Aviones en Aire – RUS” y “Barcos en Mar – RUS”). Cumple lo que pide el enunciado.
+A la derecha se ve un bloque denso y “ruidoso”: son miles de reportes por minuto y cada uno es un punto, así que parece una mancha. Es normal. Con Locust apagado, la gráfica será más legible.
+Duda menor: a la izquierda hay una línea plana exactamente en 25 y 15, que son justo los promedios teóricos. Puede ser una interpolación entre un punto viejo y el bloque nuevo, pero no estoy seguro. Mira el Table view de ese panel y comprueba que las primeras filas tengan valores reales. Si son valores aleatorios normales, es solo cosmética. Si todos valen 25 y 15, hay un dato espurio.
+Para el manual: el stream guarda unas 5000 entradas, así que bajo carga solo ves los últimos minutos. Documéntalo como limitación.
+Antes de dar el dashboard por cerrado
+Arregla los Top (nombre y orden), con tope de 20-30 min.
+Prueba de persistencia, la que más importa:
 bash
-kubectl exec -n data deploy/valkey -- valkey-cli type top:planes
-kubectl exec -n data deploy/valkey -- valkey-cli zrange top:planes 0 -1 withscores
-kubectl exec -n data deploy/valkey -- valkey-cli hgetall reports:count
+   kubectl delete pod -n data -l app.kubernetes.io/name=grafana
+   kubectl rollout status deploy/grafana -n data
 
-Compara cada país: acumulado de aviones ≈ 25 × reportes y barcos ≈ 15 × reportes. Si no cuadra, los paneles leen otra cosa o los datos están desfasados, y conviene saberlo antes de la calificación.
+Recarga con Ctrl+Shift+R. El dashboard debe volver idéntico, con nombres y orden. Si vuelve con “Value”, el JSON del chart no tiene tus cambios.
+3. Captura final con Locust corriendo, como evidencia.
+4. Commit: git add proyecto3 && git commit -m "p3: dashboard completo".
 
-La serie temporal: la otra IA se equivoca
+Siguiente paso
 
-Dice que el plugin no puede hacer una serie temporal desde un stream sin RedisTimeSeries. No estoy de acuerdo, por dos razones:
+Hoy es 21 y la entrega es mañana. Después de los Top, sigue con el paso 33 (benchmark 1 vs 2 réplicas), el 34 (HPA) y el 35 (OCI Artifact) del mensaje anterior. Corre pkill -f locust antes del benchmark, y ./scripts/pull-config.sh antes si ya cambiaste el locustfile.py.
 
-El mensaje “Data is missing a number field” significa que los datos sí llegan, pero el panel no encuentra una columna numérica. El plugin devuelve planes y ships como texto. Es un problema de tipos y se arregla con una transformación.
-Su “solución” cambia el panel por los acumulados de todos los países. Eso no es lo que pide el enunciado: pide la evolución de aviones y barcos del país asignado (RUS). Una curva que solo sube y mezcla los 5 países no es equivalente.
+Pégame la captura de los Top corregidos (o el Table view si siguen mal) y el resultado de:
 
-Cómo arreglarlo (en este orden):
-
-Corre Locust de fondo, porque con el rango “Last 15 minutes” y sin tráfico siempre saldrá vacío:
 bash
-   CARNET=202302232 locust -f locust/locustfile.py --host http://localhost:8080 --headless -u 5 -r 5 -t 20m > /tmp/locust-bg.log 2>&1 &
-Edita el panel y deja la query en XRANGE con key series:RUS, desde - hasta +. Si tu versión del plugin ofrece un selector de tipo de datos del stream (algo como Time Series / Table), prueba primero Time Series y elige el campo planes y luego ships. No puedo garantizar que tu versión lo tenga.
-Abre Table view para ver las columnas.
-Si salen columnas planes, ships y ts, usa estas transformaciones:
-Convert field type: planes → Number.
-Convert field type: ships → Number.
-Convert field type: ts → Time. Es un texto ISO (2026-10-21T02:48:19Z), que Grafana suele reconocer solo.
-Visualización Time series, con planes y ships como las dos líneas.
-
-Hay una limitación que debes documentar: el stream guarda como máximo unas 5000 entradas. Con mucha carga eso son pocos minutos de historia y con carga baja son bastantes más. Es un comportamiento esperado.
-
-Si en 20 minutos no lo logras, mándame captura del editor de la query y del Table view de ese panel. Con eso te digo exactamente qué columna falla.
-
-Para los Top
-
-Una vez que sepas el tipo de clave con type top:planes, dime el resultado y te indico la query exacta. Mientras tanto, en cada panel:
-
-En Table view confirma que existe una columna con el nombre del país.
-Aplica Sort by sobre el valor, con Reverse activado.
-Para que se vean las etiquetas, usa Overrides → Display name o la opción de legend de la query, según lo que ofrezca tu plugin.
-Qué hacer ahora
-Ejecuta los tres comandos de arriba y pégame la salida, junto con el estado de la serie temporal.
-Arregla los tres paneles (máximo 30 min más).
-Cuando los 11 muestren datos correctos, exporta el JSON y súbelo como operator v4, como en el paso 32b.4. Si no, un reinicio de Grafana te devuelve el dashboard viejo.
-Toma una captura final con Locust corriendo y continúa con los pasos 33 a 36.
-
-La rúbrica dice textualmente que un “Dashboard sin toda la información requerida” cae en el rango bajo de 25 puntos, así que vale la pena dejarlo bien.
+cat docs/bench/summary.md
+kubectl get hpa -n apps
+free -h

@@ -1,4 +1,4 @@
-
+NOTA IMPORTANTE: TODO se trabajara de forma local, nada se realizara en google cloude, y esto ya fue confirmado por el auxiliar y el cátedrático, aunque el enunciado exige trabajarlo en la nuebe, se puede trabajar 100% local, como se trabajo todo el proyecto.
 
 ## Sistemas Operativos 1
 
