@@ -123,8 +123,16 @@ kubectl apply -f "${PROJECT_ROOT}/k8s/10-rust-api.yaml"
 kubectl apply -f "${PROJECT_ROOT}/k8s/12-rust-hpa.yaml"
 kubectl apply -f "${PROJECT_ROOT}/k8s/40-consumer.yaml"
 
+# 9b. Desplegar Falco (Seguridad en Tiempo Real)
+docker exec --privileged k3d-munk8s-server-0 mount -t tracefs nodev /sys/kernel/tracing 2>/dev/null || true
+if ! helm status falco -n falco >/dev/null 2>&1; then
+    log_info "Desplegando Falco (Seguridad)..."
+    helm upgrade --install falco falcosecurity/falco --namespace falco --create-namespace -f "${PROJECT_ROOT}/k8s/falco-values.yaml" >/dev/null
+fi
+
 # 10. Esperar a que todos los Deployments estén listos
 log_info "10. Esperando despliegue completo de pods..."
+kubectl rollout status daemonset/falco -n falco --timeout=120s
 kubectl rollout status deployment/valkey -n data --timeout=120s
 kubectl rollout status deployment/grafana -n data --timeout=120s
 kubectl rollout status deployment/rabbitmq -n messaging --timeout=120s

@@ -1,0 +1,13 @@
+driver:
+  kind: modern_ebpf
+
+tty: true
+
+customRules:
+  rules-custom.yaml: |-
+    - rule: Lectura de Archivo Confidencial en Pod
+      desc: Detecta la apertura o lectura de archivos sensibles como /etc/shadow o directorios de secretos
+      condition: open_read and (fd.name startswith "/etc/shadow" or fd.name startswith "/app/secretos" or fd.name in (sensitive_files))
+      output: "ALERTA_SEGURIDAD_FALCO: Intento de lectura no autorizada (archivo=%fd.name usuario=%user.name pod=%k8s.pod.name namespace=%k8s.ns.name comando=%proc.cmdline)"
+      priority: CRITICAL
+      tags: [seguridad, confidencial, SO1]
