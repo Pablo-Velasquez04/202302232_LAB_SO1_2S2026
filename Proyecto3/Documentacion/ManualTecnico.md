@@ -284,6 +284,12 @@ Verificación del catálogo:
 curl -s https://zot:5000/v2/_catalog | jq
 ```
 
+<p align="center">
+  <img src="Imagenes/zot_catalogo.png" alt="Catálogo de Zot Registry" width="85%">
+  <br>
+  <em>Figura 1: Catálogo de imágenes y artefacto OCI publicados en el registry privado Zot.</em>
+</p>
+
 ---
 
 ## 6. Configuración de Gateway API
@@ -301,6 +307,12 @@ Se usa **Gateway API en lugar de Ingress**, con **Traefik** y su provider nativo
    ```
 3. **Gateway** (`k8s/02-gateway.yaml`): `gatewayClassName: traefik`, listener HTTP en el puerto 8000 (entrypoint `web`).
 4. **HTTPRoute** (`k8s/11-httproute.yaml`): prefijo `/grpc-202302232`, con filtro `URLRewrite` (`ReplacePrefixMatch: /`) hacia el Service `rust-api:8080`.
+
+<p align="center">
+  <img src="Imagenes/gateway_api.png" alt="Recursos de Gateway API" width="85%">
+  <br>
+  <em>Figura 2: Estado de los recursos GatewayClass, Gateway y HTTPRoute configurados con Traefik.</em>
+</p>
 
 ---
 
@@ -423,6 +435,12 @@ kubectl patch grafanainstance grafana -n data --type merge \
 
 > La reconciliación se demuestra con `maxmemory` y `resources` y no con `storage`, porque el provisioner `local-path` no permite redimensionar un PVC.
 
+<p align="center">
+  <img src="Imagenes/operator_reconciliacion.png" alt="Reconciliación y Custom Resources" width="85%">
+  <br>
+  <em>Figura 3: Operación del Operator SDK gestionando los Custom Resources y reconciliando el clúster.</em>
+</p>
+
 ---
 
 ## 10. Diseño de datos en Valkey
@@ -462,6 +480,12 @@ Título: **M.U.M.N.K8s MONITORING DASHBOARD**. Refresco: 5 s. Provisionado de fo
 
 Transformaciones usadas en los Top: unir las 5 consultas en filas, convertir el valor a número y ordenar descendente. En la serie temporal: filtrar campos y convertir `planes` y `ships` a numérico.
 
+<p align="center">
+  <img src="Imagenes/grafana_dashboard.png" alt="Dashboard de Grafana" width="85%">
+  <br>
+  <em>Figura 4: Monitoreo en tiempo real en Grafana con métricas globales y del país asignado (RUS).</em>
+</p>
+
 ---
 
 ## 12. Configuración de HPA
@@ -486,6 +510,12 @@ spec:
 - **Requisito:** `requests.cpu: 100m` en el Deployment de Rust, porque el porcentaje se calcula sobre el request.
 - Los datos de CPU los provee el **metrics-server** de k3s.
 - El HPA escala de 1 a un máximo de 3 réplicas cuando el uso de CPU supera el 30 % del request. Bajo carga controlada con Locust (`-u 150 -r 30`) se observa el escalado automático y el regreso a 1 réplica al cesar la carga.
+
+<p align="center">
+  <img src="Imagenes/hpa_escalado.png" alt="Escalado automático con HPA" width="85%">
+  <br>
+  <em>Figura 5: Autoscaling horizontal de réplicas de rust-api ante incremento de carga generado por Locust.</em>
+</p>
 
 ---
 
@@ -628,3 +658,10 @@ kubectl exec -n data deploy/valkey -- cat /etc/shadow
 ```
 
 Ambas alertas se interceptaron en tiempo real: la regla personalizada disparó con prioridad **CRITICAL** al leer `/app/secretos`, y la regla de Falco por defecto (`Sensitive file opened for reading`) disparó con **Warning** al leer `/etc/shadow`.
+
+<p align="center">
+  <img src="Imagenes/falco_alerta.png" alt="Alertas de Falco" width="85%">
+  <br>
+  <em>Figura 6: Intercepción de accesos no autorizados y emisión de alertas en tiempo real con Falco.</em>
+</p>
+
